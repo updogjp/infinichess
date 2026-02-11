@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>Infinichess</title>
+    <meta name="msapplication-TileColor" content="#0a0a0a">
+    <meta name="theme-color" content="#0a0a0a">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Sometype+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="/client/style.css" rel="stylesheet" type="text/css" />
+
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?compat=recaptcha"></script>
+</head>
+
+<body>
+    <!-- Captcha Screen -->
+    <div id="fullscreenDiv">
+        <div class="auth-container">
+            <div class="auth-header">
+                <h1>INFINICHESS</h1>
+                <p class="subtitle">INFINITE CHESS. INFINITE WAR.</p>
+            </div>
+            <div class="g-recaptcha" data-sitekey="6Lf3fAQrAAAAAHA16QHwE18_MZU9Vc3Iex6jVW2G"></div>
+        </div>
+    </div>
+
+    <!-- Player Setup Modal -->
+    <div id="playerSetupDiv" class="hidden">
+        <div class="setup-panel">
+            <div class="setup-header">
+                <h2>DEPLOY</h2>
+                <div class="header-line"></div>
+            </div>
+            
+            <div class="form-group">
+                <label>DESIGNATION</label>
+                <input type="text" id="playerName" maxlength="16" placeholder="ENTER_CALLSIGN" autocomplete="off" spellcheck="false">
+            </div>
+            
+            <div class="form-group">
+                <label>UNIT_COLOR</label>
+                <div class="color-grid">
+                    <div class="color-swatch selected" data-color="#FF0000" style="background: #FF0000;"></div>
+                    <div class="color-swatch" data-color="#00FF00" style="background: #00FF00;"></div>
+                    <div class="color-swatch" data-color="#0000FF" style="background: #0000FF;"></div>
+                    <div class="color-swatch" data-color="#FFFF00" style="background: #FFFF00;"></div>
+                    <div class="color-swatch" data-color="#FF00FF" style="background: #FF00FF;"></div>
+                    <div class="color-swatch" data-color="#00FFFF" style="background: #00FFFF;"></div>
+                    <div class="color-swatch" data-color="#FF8800" style="background: #FF8800;"></div>
+                    <div class="color-swatch" data-color="#FFFFFF" style="background: #FFFFFF;"></div>
+                </div>
+            </div>
+            
+            <div class="preview-panel">
+                <div class="preview-label">// VISUAL_CONFIRMATION</div>
+                <canvas id="previewCanvas" width="100" height="100"></canvas>
+                <div id="previewName">UNKNOWN</div>
+            </div>
+            
+            <button id="startGameBtn" class="deploy-btn">[ INITIATE_DEPLOYMENT ]</button>
+        </div>
+    </div>
+
+    <canvas id="minimapCanvas" style="z-index: -1"></canvas>
+    <canvas id="canvas" style="z-index: -2"></canvas>
+
+    <div class="chatContainer hidden">
+        <input class="chat hidden" type="text" autocomplete="off" spellcheck="false" maxlength="64">
+        <div class="chat-div"></div>
+        <div class="leaderboard-div"></div>
+    </div>
+
+    <script src="/shared/constants.js"></script>
+    <script src="/client/input.js"></script>
+    <script src="/client/client.js"></script>
+    <script src="/client/networking.js"></script>
+</body>
+
+</html>

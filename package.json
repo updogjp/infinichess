@@ -1,0 +1,28 @@
+{
+  "name": "infinichess",
+  "version": "1.0.0",
+  "description": "Massively multiplayer infinite chess game - a fork of Xess/10kchess",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node ./server/index.js",
+    "dev": "node ./server/index.js",
+    "clean": "rm -f server/*.dat"
+  },
+  "type": "module",
+  "author": "",
+  "license": "ISC",
+  "keywords": [
+    "chess",
+    "multiplayer",
+    "websocket",
+    "game",
+    "infinite"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "color-2-name": "^1.4.4",
+    "uWebSockets.js": "github:uNetworking/uWebSockets.js#v20.51.0"
+  }
+}
