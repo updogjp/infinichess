@@ -1,5 +1,7 @@
 # Infinichess
 
+![Infinichess Logo](client/assets/infinichess_512.png)
+
 A massively multiplayer infinite chess game where players control their own king pieces on an endless, persistent chessboard.
 
 ## Overview
@@ -16,26 +18,29 @@ Infinichess is a unique take on chess that combines traditional chess mechanics 
 
 ## Project History
 
-**Infinichess** is a fork of **[Xess](https://github.com/...) / 10kchess**, originally created by [original author].
+**Infinichess** is a fork of **[10kchess](https://github.com/pentaswan/10kchess)** by [@pentaswan](https://github.com/pentaswan).
 
 ### Differences from Original
 
-| Feature | Original (Xess) | Infinichess |
-|---------|----------------|-------------|
-| Board Size | 64x64 fixed | Infinite world |
-| World Persistence | None | Saves to disk |
-| Player Names | Auto-generated | Player-chosen |
-| Player Colors | Auto-generated | Player-selected |
-| Chat Display | Sidebar only | Floating bubbles + sidebar |
-| Broadcasting | All players | Viewport-based |
+| Feature           | Original (10kchess) | Infinichess                      |
+| ----------------- | ------------------- | -------------------------------- |
+| Board Size        | 64x64 fixed         | Infinite world                   |
+| World Persistence | None                | Saves to disk                    |
+| Player Names      | Auto-generated      | Player-chosen                    |
+| Player Colors     | Auto-generated      | Player-selected                  |
+| Chat Display      | Sidebar only        | Floating bubbles + sidebar       |
+| Broadcasting      | All players         | Viewport-based                   |
+| Coordinate System | Pixel-based         | Grid-based with Int32Array       |
+| AI Opponents      | None                | Multiple AI teams with cooldowns |
 
 ### Why Fork?
 
-The original Xess was an excellent proof-of-concept for massively multiplayer chess, but was limited by its fixed 64x64 board. Infinichess extends this concept to a truly infinite world with persistence and better player customization.
+The original 10kchess was an excellent proof-of-concept for massively multiplayer chess, but was limited by its fixed 64x64 board. Infinichess extends this concept to a truly infinite world with persistence, better player customization, and AI opponents.
 
 ## Running the Project
 
 ### Prerequisites
+
 - Node.js 18+
 - npm
 
@@ -64,6 +69,7 @@ npm run dev
 ```
 
 **Features:**
+
 - 🔄 Auto-restarts server when files change
 - 👀 Watches `server/`, `shared/`, `client/` directories
 - 📝 Monitors `.js`, `.json`, `.html`, `.css` files
@@ -71,6 +77,7 @@ npm run dev
 - 🔌 WebSocket clients auto-reconnect after restart
 
 **Workflow:**
+
 1. Run `npm run dev` to start with hot reloading
 2. Edit server/shared files → server auto-restarts
 3. Edit client files → refresh browser after restart
@@ -79,6 +86,7 @@ npm run dev
 ### Development Mode
 
 The server auto-detects local development. To bypass captcha for testing:
+
 1. Edit `server/index.js` line ~9: Set a test captcha key or
 2. Set `ws.verified = true` temporarily in the connection handler
 
@@ -88,7 +96,7 @@ The server auto-detects local development. To bypass captcha for testing:
 
 - **Frontend**: Vanilla JavaScript with HTML5 Canvas
 - **Backend**: Node.js with uWebSockets.js
-- **Protocol**: Binary WebSocket messages (Uint16Array)
+- **Protocol**: Binary WebSocket messages (Int32Array for coordinates, Uint16Array for other data)
 - **Storage**: Binary files for world persistence
 
 ### Key Components
@@ -100,20 +108,20 @@ The server auto-detects local development. To bypass captcha for testing:
 
 ## Network Protocol
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed protocol documentation.
+The game uses a binary WebSocket protocol with Int32Array for coordinate messages and Uint16Array for other data, supporting infinite coordinate ranges.
 
 ### Magic Numbers
 
-| Code | Purpose |
-|------|---------|
-| 55551 | Player info (name + color) |
-| 55552 | Camera position update |
-| 55553 | Viewport sync |
-| 55554 | Move piece |
-| 55555 | Set square |
-| 47095 | Chat message |
-| 48027 | Leaderboard |
-| 64535 | Neutralize team (player disconnect) |
+| Code  | Purpose                             | Format      |
+| ----- | ----------------------------------- | ----------- |
+| 55551 | Player info (name + color)          | Uint8Array  |
+| 55552 | Camera position update              | Int32Array  |
+| 55553 | Viewport sync                       | Int32Array  |
+| 55554 | Move piece                          | Int32Array  |
+| 55555 | Set square                          | Int32Array  |
+| 47095 | Chat message                        | Uint16Array |
+| 48027 | Leaderboard                         | Uint16Array |
+| 64535 | Neutralize team (player disconnect) | Uint16Array |
 
 ## File Structure
 
@@ -141,12 +149,14 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed protocol documentation.
 ## Game Mechanics
 
 ### Infinite World
+
 - 64x64 chunks loaded on-demand
 - Procedural neutral piece generation (0.2% chance per square)
 - Players spawn randomly within 50,000 squares of origin
 - Kings cannot spawn within 4 squares of other kings
 
 ### Persistence
+
 - World saves every 60 seconds
 - Saves on graceful shutdown (SIGINT/SIGTERM)
 - Neutral pieces persist between restarts
@@ -154,17 +164,19 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed protocol documentation.
 - Auto-loads on server startup
 
 ### Piece Types
-| ID | Piece | Movement |
-|----|-------|----------|
-| 0 | Empty | - |
-| 1 | Pawn | Orthogonal 1, diagonal capture |
-| 2 | Knight | L-shape |
-| 3 | Bishop | Diagonal |
-| 4 | Rook | Orthogonal |
-| 5 | Queen | Any direction |
-| 6 | King | Any direction 1 square |
+
+| ID  | Piece  | Movement                       |
+| --- | ------ | ------------------------------ |
+| 0   | Empty  | -                              |
+| 1   | Pawn   | Orthogonal 1, diagonal capture |
+| 2   | Knight | L-shape                        |
+| 3   | Bishop | Diagonal                       |
+| 4   | Rook   | Orthogonal                     |
+| 5   | Queen  | Any direction                  |
+| 6   | King   | Any direction 1 square         |
 
 ### Combat
+
 - Move cooldown: 1.5 seconds
 - Capture enemy kings to eliminate players
 - Capture neutral pieces to add to your army
@@ -176,16 +188,17 @@ ISC
 
 ## Credits
 
-- **Original Project**: Xess / 10kchess by [original author]
+- **Original Project**: [10kchess](https://github.com/pentaswan/10kchess) by [@pentaswan](https://github.com/pentaswan)
 - **Chess Pieces**: Standard chess set sprites
 - **Audio**: Move, capture, and game over sounds
 - **Built with**: uWebSockets.js, vanilla JavaScript
 
 ## Contributing
 
-This is a forked project. For the original, see [original repository].
+This is a forked project. For the original, see [10kchess](https://github.com/pentaswan/10kchess).
 
 To contribute to Infinichess:
+
 1. Fork this repository
 2. Create a feature branch
 3. Submit a pull request
@@ -200,4 +213,4 @@ To contribute to Infinichess:
 
 ---
 
-*Infinichess - Infinite chess, infinite possibilities.*
+_Infinichess - Infinite chess, infinite possibilities._
