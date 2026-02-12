@@ -17,6 +17,14 @@ let legalMoves = [],
   moveWasDrag = false;
 let cooldownEndTime = 0;
 
+// Debug threat visualization
+let debugShowThreats = false;
+window.toggleDebugThreats = () => {
+  debugShowThreats = !debugShowThreats;
+  console.log(`🎯 Debug threats: ${debugShowThreats ? 'ON' : 'OFF'}`);
+  changed = true;
+};
+
 // Toast notification system
 const toastContainer = document.getElementById("toastContainer");
 window.showToast = (message, type = "info", duration = 4000) => {
@@ -536,6 +544,34 @@ function render() {
         ctx.arc(x, y, squareSize / 7, 0, Math.PI * 2);
         ctx.fill();
         ctx.closePath();
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // Debug: Render AI threat squares
+  if (debugShowThreats && window.spatialHash) {
+    const threatSquares = new Set();
+    const visiblePieces = window.spatialHash.queryRect(startX, startY, endX, endY);
+    
+    for (const piece of visiblePieces) {
+      // Only check AI pieces (team >= 10000)
+      if (piece.team < 10000 || piece.type === 0) continue;
+      
+      // Generate legal moves for this AI piece (assume 5 kills for range)
+      const moves = generateLegalMoves(piece.x, piece.y, window.spatialHash, piece.team, 5);
+      for (const [mx, my] of moves) {
+        threatSquares.add(`${mx},${my}`);
+      }
+    }
+    
+    // Draw threat squares
+    ctx.globalAlpha = 0.2;
+    ctx.fillStyle = "#ff4444";
+    for (const key of threatSquares) {
+      const [x, y] = key.split(',').map(Number);
+      if (x >= startX && x <= endX && y >= startY && y <= endY) {
+        ctx.fillRect(x * squareSize, y * squareSize, squareSize, squareSize);
       }
     }
     ctx.globalAlpha = 1;

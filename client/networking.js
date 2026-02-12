@@ -4,7 +4,7 @@ ws.binaryType = "arraybuffer";
 window.selfId = -1;
 window.playerName = "";
 window.playerColor = "#FFB3BA"; // Default pastel pink (matches first swatch)
-window.playerPiece = 6; // Default to king (1=pawn, 2=knight, 3=bishop, 4=rook, 5=queen, 6=king)
+window.playerPiece = 6; // Default to king (evolution start)
 
 // Spatial hash on client side
 const spatialHash = new SpatialHash();

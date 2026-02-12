@@ -194,19 +194,19 @@ globalThis.SpatialHash = class SpatialHash {
     }
 };
 
-// Auto-evolve progression: Queen → Knight → Bishop/Rook (random) → King
-// Players start powerful and specialize as they capture
+// Auto-evolve progression: King → Queen → Bishop/Rook (random) → Knight
+// Players start weak and specialize as they capture
 const EVOLUTION_THRESHOLDS = [
-    { kills: 0,  piece: PIECE_QUEEN },   // Start: all directions, long range
-    { kills: 5,  piece: PIECE_KNIGHT },  // L-shape jumps, can hop over pieces
-    { kills: 10, piece: -1 },            // Random: Bishop or Rook
-    { kills: 18, piece: PIECE_KING },    // Final form: 1 square, all directions
+    { kills: 0,  piece: PIECE_KING },      // Start: weak, 1 square all directions
+    { kills: 3,  piece: PIECE_QUEEN },     // 3 kills: 8-direction ranged
+    { kills: 6,  piece: -1 },              // 6 kills: Random Bishop or Rook
+    { kills: 10, piece: PIECE_KNIGHT },    // 10 kills: strongest, L-shape jumps
 ];
 globalThis.EVOLUTION_THRESHOLDS = EVOLUTION_THRESHOLDS;
 
 // Resolve -1 (random) to Bishop or Rook using a seed
 globalThis.getEvolutionPiece = (kills, seed) => {
-    let piece = PIECE_QUEEN;
+    let piece = PIECE_KING;
     for (const threshold of EVOLUTION_THRESHOLDS) {
         if ((kills || 0) >= threshold.kills) {
             piece = threshold.piece;

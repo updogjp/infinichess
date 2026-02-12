@@ -110,6 +110,13 @@ window.onkeydown = window.onkeyup = (e) => {
     }
   }
 
+  // Debug hotkeys
+  if (e.type === "keydown") {
+    if (e.code === "KeyT") {
+      window.toggleDebugThreats?.();
+    }
+  }
+
   if (Controls[e.code] !== undefined) {
     const name = Controls[e.code];
     const state = e.type === "keydown";

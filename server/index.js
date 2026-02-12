@@ -68,9 +68,9 @@ const GAME_CONFIG = {
 const AI_CONFIG = {
   enabled: true, // Set to false to disable AI players
   verboseLog: false, // Set to true to log every AI move to console
-  minCount: 50, // Minimum AI pieces always on the board regardless of player count
+  minCount: 20, // Minimum AI pieces always on the board regardless of player count
   piecesPerPlayer: 6, // Additional AI pieces to spawn per online player
-  spawnRadius: 500, // Spawn AI within this distance of online players
+  spawnRadius: 1000, // Spawn AI within this distance of online players
   removalRadius: 8000, // Remove AI pieces if they wander beyond this distance (much larger to prevent pop-in/out)
   moveInterval: 800, // AI makes moves every 800ms (matches interpolation timing better)
   moveChance: 0.4, // 40% chance an AI piece moves each interval
@@ -525,9 +525,8 @@ function spawnAIPieces() {
       const existing = spatialHash.get(x, y);
       if (existing.type !== 0) continue;
 
-      // Random piece type — NO PAWNS (2=knight, 3=bishop, 4=rook, 5=queen, 6=king)
-      const AI_PIECE_TYPES = [2, 3, 4, 5, 6];
-      const pieceType = AI_PIECE_TYPES[Math.floor(Math.random() * AI_PIECE_TYPES.length)];
+      // AI pieces start as King (follow player evolution system)
+      const pieceType = globalThis.PIECE_KING;
       if (nextAiId >= AI_ID_MAX) nextAiId = AI_ID_MIN;
       const aiId = nextAiId++;
 
@@ -552,7 +551,6 @@ function spawnAIPieces() {
       playerMetadata.set(aiId, {
         name: aiName,
         color: aiColor,
-        pieceType: pieceType,
         kingX: x,
         kingY: y,
       });
@@ -562,12 +560,15 @@ function spawnAIPieces() {
         leaderboard.set(aiId, 0);
       }
 
-      // Track AI piece with random move offset so they don't all move in sync
+      // Track AI piece with random thinking time and move offset
+      // thinkingDeadline: when the AI finishes "thinking" and can move
+      // lastMove: when the AI last moved (for cooldown)
       aiPieces.set(aiId, {
         x,
         y,
         type: pieceType,
         lastMove: Date.now() + Math.random() * AI_CONFIG.moveInterval,
+        thinkingDeadline: Date.now() + Math.random() * 2000, // 0-2s thinking time
       });
     }
   }
@@ -617,6 +618,14 @@ function moveAIPieces() {
       continue;
     }
 
+    // Check if AI is still thinking (independent of cooldown)
+    const now = Date.now();
+    if (!aiPiece.thinkingDeadline) {
+      // Initialize thinking deadline if not set (for old AI pieces)
+      aiPiece.thinkingDeadline = now + Math.random() * 2000;
+    }
+    if (now < aiPiece.thinkingDeadline) continue; // Still thinking, can't move yet
+
     // Random chance to move
     if (Math.random() > AI_CONFIG.moveChance) continue;
 
@@ -624,13 +633,14 @@ function moveAIPieces() {
     const jitter = (aiId % 7) * 100; // 0-600ms offset based on ID
     if (Date.now() - aiPiece.lastMove < AI_CONFIG.moveInterval + jitter) continue;
 
-    // Generate legal moves (AI gets fixed range equivalent to 5 kills)
+    // Generate legal moves with range scaling based on AI's kills
+    const aiKills = leaderboard.get(aiId) || 0;
     const legalMoves = generateLegalMoves(
       aiPiece.x,
       aiPiece.y,
       spatialHash,
       aiId,
-      5,
+      aiKills,
     );
 
     if (legalMoves.length === 0) continue;
@@ -725,9 +735,13 @@ function moveAIPieces() {
     // Execute move
     move(aiPiece.x, aiPiece.y, newX, newY, aiId);
 
-    // Update AI kill count on leaderboard
+    // Update AI kill count on leaderboard and check for evolution
     if (isCapture && leaderboard.has(aiId)) {
-      leaderboard.set(aiId, (leaderboard.get(aiId) || 0) + 1);
+      const newKills = (leaderboard.get(aiId) || 0) + 1;
+      leaderboard.set(aiId, newKills);
+      
+      // AI pieces evolve using same thresholds as players
+      checkEvolution(aiId, newX, newY, newKills);
     }
 
     if (AI_CONFIG.verboseLog) {
@@ -740,6 +754,9 @@ function moveAIPieces() {
     aiPiece.x = newX;
     aiPiece.y = newY;
     aiPiece.lastMove = Date.now();
+    
+    // Reset thinking deadline for next decision cycle (0-2s random thinking time)
+    aiPiece.thinkingDeadline = Date.now() + Math.random() * 2000;
   }
 
   // Clean up captured AI entries
@@ -872,6 +889,7 @@ async function savePlayerMetadata() {
   try {
     const data = [];
     for (const [playerId, meta] of playerMetadata) {
+      if (playerId >= AI_ID_MIN) continue; // Don't save AI data
       data.push({
         id: playerId,
         name: meta.name,
@@ -1008,7 +1026,7 @@ global.app = uWS
         const r = u8[3];
         const g = u8[4];
         const b = u8[5];
-        const pieceType = u8[6] || 6; // Default to king if not provided
+        const pieceType = u8[6] || 6; // Default to king (evolution start)
 
         let name = decodeText(u8, 8, 8 + nameLength);
 
@@ -1037,7 +1055,7 @@ global.app = uWS
         if (!ws.dead) {
           console.log(`[Spawn] Player ${ws.id} (${name}) spawning... ws.closed=${ws.closed}`);
 
-          const spawnPieceType = globalThis.PIECE_QUEEN; // 5
+          const spawnPieceType = globalThis.PIECE_KING; // 6
           const spawn = findSpawnLocation(spawnPieceType);
           console.log(`[Spawn] Location: (${spawn.x}, ${spawn.y}), pieceType=${spawnPieceType}`);
 
