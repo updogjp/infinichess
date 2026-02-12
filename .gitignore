@@ -97,6 +97,7 @@ jspm_packages/
 server/world.dat
 server/players.dat
 server/*.dat
+server/top3.json
 
 # Logs
 logs/

@@ -1,5 +1,13 @@
-let ws = new WebSocket(HOST);
-ws.binaryType = "arraybuffer";
+let ws = null;
+let reconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 8;
+const BASE_RECONNECT_DELAY = 1000; // 1s, doubles each attempt
+
+function connectWebSocket() {
+  ws = new WebSocket(HOST);
+  ws.binaryType = "arraybuffer";
+  setupWebSocketHandlers();
+}
 
 window.selfId = -1;
 window.playerName = "";
@@ -64,6 +72,7 @@ window.aiCooldowns = new Map();
 // Active chat bubbles
 const activeChatBubbles = new Map(); // playerId -> { text, time, element }
 
+function setupWebSocketHandlers() {
 ws.addEventListener("message", function (data) {
   const u8 = new Uint8Array(data.data);
   // Use Int32Array for coordinate messages, Uint16Array for legacy text messages
@@ -408,6 +417,30 @@ ws.addEventListener("message", function (data) {
     updateLeaderboard(arr);
     return;
   }
+
+  // All-time top 3 leaderboard
+  else if (msg[0] === 48028) {
+    const count = msg[1];
+    let i = 2;
+    const top3 = [];
+
+    for (let j = 0; j < count; j++) {
+      const kills = msg[i++];
+      const nameLen = msg[i++];
+      const startByteInd = i * 2;
+      const name = decodeText(u8, startByteInd, startByteInd + nameLen);
+      i += Math.ceil(nameLen / 2);
+      // Read color (4 bytes packed into 2 u16 slots)
+      const r = u8[i * 2];
+      const g = u8[i * 2 + 1];
+      const b = u8[i * 2 + 2];
+      i += 2;
+      top3.push({ name, kills, color: { r, g, b } });
+    }
+
+    updateTop3Leaderboard(top3);
+    return;
+  }
 });
 
 let connected = false;
@@ -420,6 +453,8 @@ window.send = (data) => {
 
 ws.onopen = () => {
   connected = true;
+  reconnectAttempts = 0;
+  console.log("✓ WebSocket connected");
   window.send = (data) => {
     ws.send(data);
   };
@@ -432,22 +467,29 @@ ws.onopen = () => {
 
 ws.onerror = (error) => {
   console.error("❌ WebSocket error:", error);
-  window.showToast("Connection error - check server", "error", 5000);
 };
 
 ws.onclose = () => {
   connected = false;
   console.log("Disconnected from server");
-  // Only show alert if we were previously connected (not on initial failed connection)
-  if (selfId !== -1) {
+  window.send = (data) => { msgs.push(data); };
+
+  if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+    const delay = BASE_RECONNECT_DELAY * Math.pow(2, reconnectAttempts);
+    reconnectAttempts++;
+    console.log(`🔄 Reconnecting in ${delay}ms (attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`);
+    window.showToast(`Reconnecting... (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`, "error", delay);
     setTimeout(() => {
-      if (!connected) {
-        window.showToast("Disconnected from server!", "error", 6000);
-      }
-    }, 1000);
+      connectWebSocket();
+    }, delay);
+  } else {
+    window.showToast("Connection lost. Refresh to retry.", "error", 10000);
   }
-  window.send = () => {};
 };
+} // end setupWebSocketHandlers
+
+// Initial connection
+connectWebSocket();
 
 // Send camera position periodically for viewport syncing
 setInterval(() => {

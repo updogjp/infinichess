@@ -490,6 +490,49 @@ body {
   }
 }
 
+/* Top 3 all-time section */
+#top3-container {
+  flex-shrink: 0;
+}
+
+.top3-header {
+  font-family: "Sometype Mono", monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  color: #FFD700;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+}
+
+.top3-row {
+  font-family: "Sometype Mono", monospace;
+  font-size: 11px;
+  padding: 6px 8px;
+  border-left: 3px solid transparent;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 215, 0, 0.04);
+  margin-bottom: 1px;
+}
+
+.top3-row:nth-child(2) { background: rgba(255, 215, 0, 0.06); }
+.top3-row:nth-child(3) { background: rgba(192, 192, 192, 0.05); }
+.top3-row:nth-child(4) { background: rgba(205, 127, 50, 0.04); }
+
+.top3-medal {
+  font-size: 14px;
+  min-width: 18px;
+  text-align: center;
+}
+
+#top3-container + #leaderboard-content {
+  border-top: 1px solid var(--border);
+  margin-top: 8px;
+  padding-top: 8px;
+}
+
 #leaderboard-content {
   flex: 1;
   overflow-y: auto;

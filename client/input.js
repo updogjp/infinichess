@@ -321,6 +321,53 @@ function updateLeaderboard(entries) {
 // Legacy compat — kept for any other callers
 function addToLeaderboard() {}
 
+// All-time top 3 leaderboard (gold/silver/bronze)
+const MEDAL_ICONS = ["🥇", "🥈", "🥉"];
+const MEDAL_COLORS = ["#FFD700", "#C0C0C0", "#CD7F32"];
+
+function updateTop3Leaderboard(entries) {
+  const container = document.getElementById("top3-container");
+  if (!container) return;
+
+  container.innerHTML = "";
+
+  if (entries.length === 0) return;
+
+  const header = document.createElement("div");
+  header.classList.add("top3-header");
+  header.textContent = "ALL-TIME";
+  container.appendChild(header);
+
+  for (let i = 0; i < entries.length; i++) {
+    const { name, kills, color } = entries[i];
+    const row = document.createElement("div");
+    row.classList.add("top3-row");
+    row.style.borderLeftColor = MEDAL_COLORS[i];
+
+    const medal = document.createElement("span");
+    medal.classList.add("top3-medal");
+    medal.textContent = MEDAL_ICONS[i];
+    row.appendChild(medal);
+
+    const colorInd = document.createElement("div");
+    colorInd.classList.add("player-color-indicator");
+    colorInd.style.backgroundColor = `rgb(${color.r},${color.g},${color.b})`;
+    row.appendChild(colorInd);
+
+    const nameSpan = document.createElement("span");
+    nameSpan.classList.add("player-name");
+    nameSpan.textContent = name;
+    row.appendChild(nameSpan);
+
+    const killsSpan = document.createElement("span");
+    killsSpan.classList.add("lb-kills");
+    killsSpan.textContent = kills;
+    row.appendChild(killsSpan);
+
+    container.appendChild(row);
+  }
+}
+
 const isMobile =
   /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
     navigator.userAgent,

@@ -111,6 +111,99 @@ const spawnImmunity = new Map();
 
 let leaderboard = new Map();
 
+// Persistent all-time top 3 leaderboard (gold/silver/bronze)
+const TOP3_SAVE_PATH = "server/top3.json";
+let allTimeTop3 = []; // [{name, kills, color}]
+
+function loadTop3() {
+  try {
+    if (fsSync.existsSync(TOP3_SAVE_PATH)) {
+      const data = fsSync.readFileSync(TOP3_SAVE_PATH, "utf8");
+      if (data && data.trim().length > 0) {
+        allTimeTop3 = JSON.parse(data);
+        console.log(`[Startup] Loaded ${allTimeTop3.length} all-time top entries`);
+      }
+    }
+  } catch (e) {
+    console.error("[Startup] Failed to load top 3:", e);
+    allTimeTop3 = [];
+  }
+}
+
+function saveTop3() {
+  try {
+    fsSync.writeFileSync(TOP3_SAVE_PATH, JSON.stringify(allTimeTop3));
+  } catch (e) {
+    console.error("[Persistence] Failed to save top 3:", e);
+  }
+}
+
+function checkTop3(name, kills, color) {
+  if (kills <= 0) return false;
+
+  // Check if this score qualifies for top 3
+  const dominated = allTimeTop3.length < 3 || kills > allTimeTop3[allTimeTop3.length - 1].kills;
+  if (!dominated) return false;
+
+  // Check if this player already has an entry — update if higher
+  const existing = allTimeTop3.findIndex(e => e.name === name);
+  if (existing !== -1) {
+    if (kills <= allTimeTop3[existing].kills) return false;
+    allTimeTop3[existing].kills = kills;
+    allTimeTop3[existing].color = color;
+  } else {
+    allTimeTop3.push({ name, kills, color });
+  }
+
+  // Sort and trim to top 3
+  allTimeTop3.sort((a, b) => b.kills - a.kills);
+  allTimeTop3 = allTimeTop3.slice(0, 3);
+
+  saveTop3();
+  broadcastToAll(sendTop3());
+  return true;
+}
+
+function sendTop3() {
+  // Magic number 48028 for top 3 leaderboard
+  // Format: [magic, count, ...entries] where each entry is:
+  // [kills(u16), nameLen(u16), ...nameBytes]
+  // Plus 3 bytes for color (r,g,b) packed after name
+  let totalU16 = 2; // magic + count
+  const entries = [];
+
+  for (const entry of allTimeTop3) {
+    const nameBytes = new TextEncoder().encode(entry.name);
+    entries.push({ ...entry, nameBytes });
+    // kills(1) + nameLen(1) + ceil(nameBytes/2) + colorSlots(2 = 4 bytes for r,g,b + pad)
+    totalU16 += 1 + 1 + Math.ceil(nameBytes.length / 2) + 2;
+  }
+
+  const buf = new Uint8Array(totalU16 * 2);
+  const u16 = new Uint16Array(buf.buffer);
+  u16[0] = 48028; // Magic for top 3
+  u16[1] = entries.length;
+
+  let i = 2;
+  for (const e of entries) {
+    u16[i++] = e.kills;
+    u16[i++] = e.nameBytes.length;
+    for (let j = 0; j < e.nameBytes.length; j++) {
+      buf[i * 2 + j] = e.nameBytes[j];
+    }
+    i += Math.ceil(e.nameBytes.length / 2);
+    // Pack color as 4 bytes (r, g, b, 0)
+    const c = e.color || { r: 255, g: 255, b: 255 };
+    buf[i * 2] = c.r;
+    buf[i * 2 + 1] = c.g;
+    buf[i * 2 + 2] = c.b;
+    buf[i * 2 + 3] = 0;
+    i += 2;
+  }
+
+  return buf;
+}
+
 function sendLeaderboard() {
   // Sort by kills descending, limit to top 20
   const sorted = [...leaderboard.entries()]
@@ -242,6 +335,10 @@ function move(startX, startY, finX, finY, playerId) {
     leaderboard.set(playerId, currentKills + 1);
     broadcastToAll(sendLeaderboard());
 
+    // Check all-time top 3
+    const killerMeta = playerMetadata.get(playerId);
+    if (killerMeta) checkTop3(killerMeta.name, currentKills + 1, killerMeta.color);
+
     // Auto-evolve: check if player should transform
     checkEvolution(playerId, finX, finY, currentKills + 1);
   }
@@ -268,6 +365,10 @@ function move(startX, startY, finX, finY, playerId) {
     leaderboard.set(victimId, 0);
 
     broadcastToAll(sendLeaderboard());
+
+    // Check all-time top 3
+    const killerMeta2 = playerMetadata.get(playerId);
+    if (killerMeta2) checkTop3(killerMeta2.name, currentKills + 1, killerMeta2.color);
 
     // Auto-evolve: check if player should transform
     if (playerId < AI_ID_MIN) {
@@ -456,7 +557,7 @@ function sendViewportState(ws, centerX, centerY) {
   }
 }
 
-const PORT = 3000;
+const PORT = parseInt(process.env.PORT) || 3000;
 global.clients = {};
 let connectedIps = {};
 let id = 1;
@@ -963,6 +1064,7 @@ process.on("SIGTERM", () => {
 
 // Load world on startup (async)
 console.log("[Startup] Loading world...");
+loadTop3();
 await loadWorld();
 await loadPlayerMetadata();
 
@@ -991,6 +1093,11 @@ global.app = uWS
       // Don't send initial board state yet - wait for spawn/captcha
       leaderboard.set(ws.id, 0);
       broadcastToAll(sendLeaderboard());
+
+      // Send all-time top 3 to new client
+      if (allTimeTop3.length > 0) {
+        send(ws, sendTop3());
+      }
     },
 
     message: (ws, data) => {

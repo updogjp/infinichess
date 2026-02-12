@@ -19,6 +19,11 @@
     "game",
     "infinite"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/updogjp/infinichess",
+    "icon": "client/assets/infinichess.png"
+  },
   "engines": {
     "node": "20.x"
   },
