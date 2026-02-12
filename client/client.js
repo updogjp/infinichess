@@ -1402,6 +1402,19 @@ document.getElementById("recenterBtn").addEventListener("click", () => {
   }
 });
 
+// Force respawn button (debug)
+document.getElementById("forceRespawnBtn").addEventListener("click", () => {
+  console.log("🔄 Force respawn triggered");
+  window._hadMyPiece = false;
+  gameOver = false;
+  gameOverTime = undefined;
+  gameOverAlpha = 0;
+  // Re-send player info to trigger a fresh spawn on server
+  if (window.sendPlayerInfo) {
+    window.sendPlayerInfo();
+  }
+});
+
 // Piece hover tooltip
 const pieceTooltip = document.getElementById("pieceTooltip");
 let lastTooltipSquare = null;

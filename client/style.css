@@ -300,6 +300,32 @@ body {
   background: var(--text-muted);
 }
 
+/* Spectate Button */
+.spectate-btn {
+  width: 100%;
+  padding: 10px;
+  margin-top: 8px;
+  font-family: "Sometype Mono", monospace;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 2px;
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  text-transform: uppercase;
+  transition: all 0.1s;
+}
+
+.spectate-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+}
+
+.spectate-btn:active {
+  background: var(--bg-tertiary);
+}
+
 /* Chat Container */
 .chatContainer {
   position: fixed;

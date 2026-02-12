@@ -67,13 +67,31 @@ const GAME_CONFIG = {
 // Piece spawner configuration
 const AI_CONFIG = {
   enabled: true, // Set to false to disable AI players
+  verboseLog: false, // Set to true to log every AI move to console
   minCount: 50, // Minimum AI pieces always on the board regardless of player count
   piecesPerPlayer: 6, // Additional AI pieces to spawn per online player
-  spawnRadius: 2500, // Spawn AI within this distance of online players
+  spawnRadius: 500, // Spawn AI within this distance of online players
   removalRadius: 8000, // Remove AI pieces if they wander beyond this distance (much larger to prevent pop-in/out)
   moveInterval: 800, // AI makes moves every 800ms (matches interpolation timing better)
   moveChance: 0.4, // 40% chance an AI piece moves each interval
 };
+
+// Chess-themed AI name generator
+const AI_NAME_PREFIXES = [
+  "Grand", "Dark", "Silent", "Swift", "Iron", "Shadow", "Royal", "Brave",
+  "Noble", "Crimson", "Frost", "Storm", "Ancient", "Phantom", "Golden",
+  "Rogue", "Steel", "Ivory", "Obsidian", "Emerald",
+];
+const AI_NAME_SUFFIXES = [
+  "Gambit", "Castle", "Tempo", "Blitz", "Zugzwang", "Fianchetto", "Fork",
+  "Pin", "Skewer", "Mate", "Check", "Endgame", "Opening", "Sacrifice",
+  "Promotion", "Stalemate", "Elo", "Rank", "File", "Diagonal",
+];
+function generateAIName(aiId) {
+  const prefix = AI_NAME_PREFIXES[aiId % AI_NAME_PREFIXES.length];
+  const suffix = AI_NAME_SUFFIXES[Math.floor(aiId / AI_NAME_PREFIXES.length) % AI_NAME_SUFFIXES.length];
+  return `${prefix}${suffix}`;
+}
 
 // Initialize spatial hash for infinite world
 const spatialHash = new SpatialHash();
@@ -94,11 +112,16 @@ const spawnImmunity = new Map();
 let leaderboard = new Map();
 
 function sendLeaderboard() {
+  // Sort by kills descending, limit to top 20
+  const sorted = [...leaderboard.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 20);
+
   const leaderboardData = [];
   // Count in Uint16 slots: 2 for header (magic + onlineCount)
   let u16Len = 2;
 
-  for (const [playerId, kills] of leaderboard) {
+  for (const [playerId, kills] of sorted) {
     const metadata = playerMetadata.get(playerId);
     const name = metadata ? metadata.name : teamToName(playerId);
     const nameBytes = new TextEncoder().encode(name);
@@ -170,15 +193,19 @@ function move(startX, startY, finX, finY, playerId) {
   const endPiece = spatialHash.get(finX, finY);
   const isCapture = endPiece.type !== 0;
 
-  // Log move in chess notation
+  // Get player label for logging
   const meta = playerMetadata.get(playerId);
   const playerLabel = meta ? meta.name : `#${playerId}`;
-  const notation = moveToNotation(startPiece.type, startX, startY, finX, finY, isCapture);
-  if (isCapture) {
-    const victimPiece = PIECE_NAMES[endPiece.type] || "piece";
-    console.log(`[Move] ${playerLabel}: ${notation} (captures ${victimPiece})`);
-  } else {
-    console.log(`[Move] ${playerLabel}: ${notation}`);
+
+  // Log move in chess notation (only if verbose logging enabled)
+  if (AI_CONFIG.verboseLog) {
+    const notation = moveToNotation(startPiece.type, startX, startY, finX, finY, isCapture);
+    if (isCapture) {
+      const victimPiece = PIECE_NAMES[endPiece.type] || "piece";
+      console.log(`[Move] ${playerLabel}: ${notation} (captures ${victimPiece})`);
+    } else {
+      console.log(`[Move] ${playerLabel}: ${notation}`);
+    }
   }
 
   // Perform the move
@@ -304,8 +331,8 @@ function findSpawnLocation(pieceType = 6) {
   // Define spawn boundaries based on game mode
   let minX, maxX, minY, maxY;
   if (GAME_CONFIG.infiniteMode) {
-    // Infinite mode: spawn within 50000 units from origin
-    const SPAWN_RADIUS = 50000;
+    // Infinite mode: spawn near center for density (increase for spread)
+    const SPAWN_RADIUS = 50;
     minX = -SPAWN_RADIUS;
     maxX = SPAWN_RADIUS;
     minY = -SPAWN_RADIUS;
@@ -458,26 +485,35 @@ function spawnAIPieces() {
   if (!AI_CONFIG.enabled) return;
 
   const players = Object.values(clients);
-  if (players.length === 0) return;
+  const spawnedPlayers = players.filter(p => {
+    const m = playerMetadata.get(p.id);
+    return m && m.kingX !== undefined && m.kingX !== 0;
+  });
 
   const targetAIPieces = Math.max(AI_CONFIG.minCount, players.length * AI_CONFIG.piecesPerPlayer);
   const currentAIPieces = aiPieces.size;
 
   // Spawn more AI if below target
   if (currentAIPieces < targetAIPieces) {
-    const toSpawn = Math.min(3, targetAIPieces - currentAIPieces);
+    const toSpawn = Math.min(10, targetAIPieces - currentAIPieces);
 
     for (let i = 0; i < toSpawn; i++) {
-      // Pick a random online player to spawn near
-      const player = players[Math.floor(Math.random() * players.length)];
-      const meta = playerMetadata.get(player.id);
-      if (!meta || meta.kingX === undefined) continue;
+      let centerX = 0;
+      let centerY = 0;
 
-      // Spawn within radius of player
+      // Spawn near a random online player if any, otherwise near origin
+      if (spawnedPlayers.length > 0) {
+        const player = spawnedPlayers[Math.floor(Math.random() * spawnedPlayers.length)];
+        const meta = playerMetadata.get(player.id);
+        centerX = meta.kingX;
+        centerY = meta.kingY;
+      }
+
+      // Spawn within radius
       const angle = Math.random() * Math.PI * 2;
       const dist = Math.random() * AI_CONFIG.spawnRadius;
-      let x = Math.floor(meta.kingX + (Math.cos(angle) * dist) / 150);
-      let y = Math.floor(meta.kingY + (Math.sin(angle) * dist) / 150);
+      let x = Math.floor(centerX + (Math.cos(angle) * dist) / 150);
+      let y = Math.floor(centerY + (Math.sin(angle) * dist) / 150);
 
       // Clamp to board boundaries in 64x64 mode
       if (!GAME_CONFIG.infiniteMode) {
@@ -489,8 +525,9 @@ function spawnAIPieces() {
       const existing = spatialHash.get(x, y);
       if (existing.type !== 0) continue;
 
-      // Random piece type (1=pawn, 2=knight, 3=bishop, 4=rook, 5=queen)
-      const pieceType = Math.floor(Math.random() * 5) + 1;
+      // Random piece type — NO PAWNS (2=knight, 3=bishop, 4=rook, 5=queen, 6=king)
+      const AI_PIECE_TYPES = [2, 3, 4, 5, 6];
+      const pieceType = AI_PIECE_TYPES[Math.floor(Math.random() * AI_PIECE_TYPES.length)];
       if (nextAiId >= AI_ID_MAX) nextAiId = AI_ID_MIN;
       const aiId = nextAiId++;
 
@@ -510,46 +547,56 @@ function spawnAIPieces() {
       // Set piece on board with AI color
       setSquare(x, y, pieceType, aiId);
 
-      // Store AI color metadata
+      // Store AI color metadata with chess-themed name
+      const aiName = generateAIName(aiId);
       playerMetadata.set(aiId, {
-        name: `AI_${aiId}`,
+        name: aiName,
         color: aiColor,
         pieceType: pieceType,
         kingX: x,
         kingY: y,
       });
 
-      // Track AI piece
+      // Add AI to leaderboard
+      if (!leaderboard.has(aiId)) {
+        leaderboard.set(aiId, 0);
+      }
+
+      // Track AI piece with random move offset so they don't all move in sync
       aiPieces.set(aiId, {
         x,
         y,
         type: pieceType,
-        lastMove: Date.now(),
+        lastMove: Date.now() + Math.random() * AI_CONFIG.moveInterval,
       });
     }
   }
 
-  // Remove AI pieces that are too far from all players
-  for (const [aiId, aiPiece] of aiPieces) {
-    let nearPlayer = false;
-    for (const player of players) {
-      const meta = playerMetadata.get(player.id);
-      if (!meta) continue;
+  // Remove AI pieces that are too far from all spawned players
+  // But never go below minCount
+  if (spawnedPlayers.length > 0 && aiPieces.size > AI_CONFIG.minCount) {
+    for (const [aiId, aiPiece] of aiPieces) {
+      if (aiPieces.size <= AI_CONFIG.minCount) break; // Keep minimum
 
-      const dx = (aiPiece.x - meta.kingX) * 150;
-      const dy = (aiPiece.y - meta.kingY) * 150;
-      const dist = Math.sqrt(dx * dx + dy * dy);
+      let nearPlayer = false;
+      for (const player of spawnedPlayers) {
+        const meta = playerMetadata.get(player.id);
+        if (!meta) continue;
 
-      if (dist < AI_CONFIG.removalRadius) {
-        nearPlayer = true;
-        break;
+        const dx = (aiPiece.x - meta.kingX) * 150;
+        const dy = (aiPiece.y - meta.kingY) * 150;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist < AI_CONFIG.removalRadius) {
+          nearPlayer = true;
+          break;
+        }
       }
-    }
 
-    if (!nearPlayer) {
-      // Remove AI piece that wandered too far
-      setSquare(aiPiece.x, aiPiece.y, 0, 0);
-      aiPieces.delete(aiId);
+      if (!nearPlayer) {
+        setSquare(aiPiece.x, aiPiece.y, 0, 0);
+        aiPieces.delete(aiId);
+      }
     }
   }
 }
@@ -573,8 +620,9 @@ function moveAIPieces() {
     // Random chance to move
     if (Math.random() > AI_CONFIG.moveChance) continue;
 
-    // Don't move too frequently
-    if (Date.now() - aiPiece.lastMove < AI_CONFIG.moveInterval) continue;
+    // Don't move too frequently (with per-piece jitter for natural feel)
+    const jitter = (aiId % 7) * 100; // 0-600ms offset based on ID
+    if (Date.now() - aiPiece.lastMove < AI_CONFIG.moveInterval + jitter) continue;
 
     // Generate legal moves (AI gets fixed range equivalent to 5 kills)
     const legalMoves = generateLegalMoves(
@@ -665,13 +713,28 @@ function moveAIPieces() {
     const [newX, newY] = chosenMove;
     const targetPiece = spatialHash.get(newX, newY);
 
+    // Track captures for leaderboard
+    const isCapture = targetPiece.type !== 0 && targetPiece.team !== aiId;
+
     // If capturing another AI piece, remove it from tracking
     if (targetPiece.team !== 0 && targetPiece.team >= AI_ID_MIN) {
       aiPieces.delete(targetPiece.team);
+      leaderboard.delete(targetPiece.team);
     }
 
     // Execute move
     move(aiPiece.x, aiPiece.y, newX, newY, aiId);
+
+    // Update AI kill count on leaderboard
+    if (isCapture && leaderboard.has(aiId)) {
+      leaderboard.set(aiId, (leaderboard.get(aiId) || 0) + 1);
+    }
+
+    if (AI_CONFIG.verboseLog) {
+      const meta = playerMetadata.get(aiId);
+      const name = meta ? meta.name : `AI_${aiId}`;
+      console.log(`[AI] ${name} ${isCapture ? 'captures' : 'moves'} (${aiPiece.x},${aiPiece.y}) → (${newX},${newY})`);
+    }
 
     // Update AI piece position
     aiPiece.x = newX;
@@ -682,6 +745,7 @@ function moveAIPieces() {
   // Clean up captured AI entries
   for (const id of toDelete) {
     aiPieces.delete(id);
+    leaderboard.delete(id);
   }
 }
 
@@ -689,6 +753,12 @@ function moveAIPieces() {
 if (AI_CONFIG.enabled) {
   setInterval(spawnAIPieces, 2000);
   setInterval(moveAIPieces, 1000);
+  // Periodic leaderboard broadcast so AI kills are reflected
+  setInterval(() => {
+    if (Object.keys(clients).length > 0) {
+      broadcastToAll(sendLeaderboard());
+    }
+  }, 5000);
   console.log(
     `[AI] System enabled - min ${AI_CONFIG.minCount}, +${AI_CONFIG.piecesPerPlayer} per player`,
   );
@@ -917,10 +987,10 @@ global.app = uWS
           ws.camera.y = decoded[2];
           ws.camera.scale = decoded[3] / 100; // Scale stored as integer * 100
 
-          // Only send viewport syncs for spawned players
-          if (ws.verified && !ws.dead) {
+          // Send viewport syncs for any verified client (players + spectators)
+          if (ws.verified) {
             const now = Date.now();
-            if (!ws.lastViewportSync || now - ws.lastViewportSync > 5000) {
+            if (!ws.lastViewportSync || now - ws.lastViewportSync > 2000) {
               ws.lastViewportSync = now;
               sendViewportState(ws, ws.camera.x, ws.camera.y);
             }
@@ -962,79 +1032,103 @@ global.app = uWS
 
         // Broadcast updated leaderboard with new name
         broadcastToAll(sendLeaderboard());
-        return;
-      }
 
-      // Unverified players: handle captcha and spawn
-      if (
-        ws.verified === false ||
-        (ws.dead === true && !(u8[0] === 0xf7 && u8[1] === 0xb7))
-      ) {
-        (async () => {
-          if (ws.verified === false) {
-            // Player metadata will be set by the client after captcha
-            // For now, use default values until player sends their info
-            if (!playerMetadata.has(ws.id)) {
-              playerMetadata.set(ws.id, {
-                name: teamToName(ws.id),
-                color: teamToColor(ws.id),
-                kingX: 0,
-                kingY: 0,
-              });
-            }
+        // Spawn the player immediately after receiving their info
+        if (!ws.dead) {
+          console.log(`[Spawn] Player ${ws.id} (${name}) spawning... ws.closed=${ws.closed}`);
 
-            // Captcha disabled - auto-verify all connections
-            ws.verified = true;
-          }
+          const spawnPieceType = globalThis.PIECE_QUEEN; // 5
+          const spawn = findSpawnLocation(spawnPieceType);
+          console.log(`[Spawn] Location: (${spawn.x}, ${spawn.y}), pieceType=${spawnPieceType}`);
 
-          if (Date.now() < ws.respawnTime) return;
-
-          // Check if player has set their name (player setup completed)
-          let meta = playerMetadata.get(ws.id);
-          const defaultName = teamToName(ws.id);
-
-          if (!meta || meta.name === defaultName) {
-            return;
-          }
-
-          console.log(`[Spawn] Player ${ws.id} (${meta.name}) ready to spawn`);
-
-          // Always spawn as Queen — players evolve through captures
-          const pieceType = globalThis.PIECE_QUEEN;
-          const spawn = findSpawnLocation(pieceType);
-
-          // Mark as verified BEFORE placing piece so broadcastToViewport includes this player
+          // Mark as verified and set camera BEFORE placing piece
           ws.verified = true;
           ws.dead = false;
           ws.camera.x = spawn.x;
           ws.camera.y = spawn.y;
 
-          setSquare(spawn.x, spawn.y, pieceType, ws.id);
+          // Place piece on board
+          spatialHash.set(spawn.x, spawn.y, spawnPieceType, ws.id);
 
-          // Grant spawn immunity and broadcast to all clients
-          spawnImmunity.set(ws.id, Date.now() + SPAWN_IMMUNITY_MS);
-          const immuneBuf = new Uint16Array(3);
-          immuneBuf[0] = 55556; // Magic number for spawn immunity
-          immuneBuf[1] = ws.id;
-          immuneBuf[2] = Math.floor(SPAWN_IMMUNITY_MS / 100); // Duration in 100ms units
-          broadcastToAll(immuneBuf);
+          // Verify piece was placed
+          const verify = spatialHash.get(spawn.x, spawn.y);
+          console.log(`[Spawn] Verify piece at (${spawn.x},${spawn.y}): type=${verify.type}, team=${verify.team}`);
 
-          // Update metadata with king position
+          // Update metadata with spawn position
+          const meta = playerMetadata.get(ws.id);
           meta.kingX = spawn.x;
           meta.kingY = spawn.y;
 
-          console.log(
-            `[Spawn] ✓ Player ${ws.id} (${meta.name}) spawned at ${toChessNotation(spawn.x, spawn.y)} (${SPAWN_IMMUNITY_MS / 1000}s immunity)`,
-          );
+          // Grant spawn immunity
+          spawnImmunity.set(ws.id, Date.now() + SPAWN_IMMUNITY_MS);
+          const immuneBuf = new Uint16Array(3);
+          immuneBuf[0] = 55556;
+          immuneBuf[1] = ws.id;
+          immuneBuf[2] = Math.floor(SPAWN_IMMUNITY_MS / 100);
+          broadcastToAll(immuneBuf);
 
-          // Send initial viewport (spawn coords are grid coords)
+          // 1) Send viewport FIRST — this sets selfId on the client
           sendViewportState(ws, spawn.x, spawn.y);
-          // Store camera as grid coords to match client update format
-          ws.camera.x = spawn.x;
-          ws.camera.y = spawn.y;
+          console.log(`[Spawn] Sent viewport to player ${ws.id}`);
 
-          console.log(`[Spawn] ✓ Sent viewport state to player ${ws.id}`);
-        })();
+          // 2) THEN send direct setSquare — client now knows selfId so spawn detection works
+          const spawnBuf = new Int32Array(5);
+          spawnBuf[0] = 55555;
+          spawnBuf[1] = spawn.x;
+          spawnBuf[2] = spawn.y;
+          spawnBuf[3] = spawnPieceType;
+          spawnBuf[4] = ws.id;
+          send(ws, spawnBuf.buffer);
+          console.log(`[Spawn] ✓ Player ${ws.id} (${name}) at (${spawn.x}, ${spawn.y})`);
+        }
+
+        return;
+      }
+
+      // Unverified players: auto-verify (captcha disabled)
+      if (ws.verified === false) {
+        if (!playerMetadata.has(ws.id)) {
+          playerMetadata.set(ws.id, {
+            name: teamToName(ws.id),
+            color: teamToColor(ws.id),
+            kingX: 0,
+            kingY: 0,
+          });
+        }
+        ws.verified = true;
+        return;
+      }
+
+      // Dead players: handle respawn trigger
+      if (ws.dead === true) {
+        if (Date.now() < ws.respawnTime) return;
+
+        const meta = playerMetadata.get(ws.id);
+        if (!meta || !meta.name) return;
+
+        console.log(`[Respawn] Player ${ws.id} (${meta.name}) respawning...`);
+
+        const pieceType = globalThis.PIECE_QUEEN;
+        const spawn = findSpawnLocation(pieceType);
+
+        ws.dead = false;
+        ws.camera.x = spawn.x;
+        ws.camera.y = spawn.y;
+
+        setSquare(spawn.x, spawn.y, pieceType, ws.id);
+
+        spawnImmunity.set(ws.id, Date.now() + SPAWN_IMMUNITY_MS);
+        const immuneBuf = new Uint16Array(3);
+        immuneBuf[0] = 55556;
+        immuneBuf[1] = ws.id;
+        immuneBuf[2] = Math.floor(SPAWN_IMMUNITY_MS / 100);
+        broadcastToAll(immuneBuf);
+
+        meta.kingX = spawn.x;
+        meta.kingY = spawn.y;
+
+        console.log(`[Respawn] ✓ Player ${ws.id} (${meta.name}) at ${toChessNotation(spawn.x, spawn.y)}`);
+        sendViewportState(ws, spawn.x, spawn.y);
         return;
       }
 

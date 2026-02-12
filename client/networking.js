@@ -120,9 +120,11 @@ ws.addEventListener("message", function (data) {
 
     // Center camera on our piece if we just spawned (had no piece before)
     const hadPieceBefore = window._hadMyPiece || false;
+    console.log(`📍 Viewport: myPiece=(${myPieceX},${myPieceY}), hadBefore=${hadPieceBefore}, selfId=${selfId}`);
     if (myPieceX !== null && myPieceY !== null && !hadPieceBefore) {
       camera.x = -(myPieceX * squareSize + squareSize / 2);
       camera.y = -(myPieceY * squareSize + squareSize / 2);
+      console.log(`📍 Camera centered on (${myPieceX}, ${myPieceY})`);
     }
     window._hadMyPiece = myPieceX !== null;
 
@@ -142,6 +144,10 @@ ws.addEventListener("message", function (data) {
     const y = i32[2];
     const piece = i32[3];
     const team = i32[4];
+
+    if (team === selfId) {
+      console.log(`🎯 setSquare for OUR piece: x=${x}, y=${y}, type=${piece}, team=${team}`);
+    }
 
     const oldPiece = spatialHash.get(x, y);
 
@@ -457,7 +463,7 @@ ws.onclose = () => {
 
 // Send camera position periodically for viewport syncing
 setInterval(() => {
-  if (connected && camera && window._hadMyPiece) {
+  if (connected && camera && (window._hadMyPiece || window.spectateMode)) {
     const buf = new Int32Array(4);
     buf[0] = 55552; // Magic number for camera update
     // Send grid coordinates (camera is negative world pixel pos)
@@ -549,12 +555,42 @@ function initPlayerSetup() {
       connected: connected,
     });
 
+    window.spectateMode = false;
     playerSetupCompleted = true;
     document.getElementById("playerSetupDiv").classList.add("hidden");
 
     // Send player info to server
     sendPlayerInfo();
   });
+
+  // Spectate button
+  const spectateBtn = document.getElementById("spectateBtn");
+  if (spectateBtn) {
+    spectateBtn.addEventListener("click", () => {
+      console.log("👁️ Spectate mode activated");
+      window.spectateMode = true;
+      playerSetupCompleted = true;
+      document.getElementById("playerSetupDiv").classList.add("hidden");
+
+      // Show chat/leaderboard UI
+      const chatContainer = document.querySelector(".chatContainer");
+      if (chatContainer) chatContainer.classList.remove("hidden");
+
+      // Center camera at origin and request viewport
+      camera.x = 0;
+      camera.y = 0;
+      window._hadMyPiece = true; // Prevent camera auto-centering
+
+      // Send a camera update to get viewport data from server
+      // Need to be verified first — send a dummy message to trigger auto-verify
+      if (connected) {
+        const buf = new Uint8Array(2);
+        buf[0] = 0;
+        buf[1] = 0;
+        ws.send(buf);
+      }
+    });
+  }
 
   // Initial preview
   updatePreview();
@@ -571,6 +607,7 @@ function hexToRgb(hex) {
     : { r: 255, g: 0, b: 0 };
 }
 
+window.sendPlayerInfo = sendPlayerInfo;
 function sendPlayerInfo() {
   // Send player info: magic(2) + nameLen(1) + r(1) + g(1) + b(1) + piece(1) + padding(1) + name(variable)
   const nameBuf = new TextEncoder().encode(window.playerName);

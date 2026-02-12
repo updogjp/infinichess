@@ -16,6 +16,15 @@ globalThis.respawnTime = 5 * 1000;
 globalThis.SPAWN_IMMUNITY_MS = 3 * 1000;
 globalThis.CHUNK_SIZE = CHUNK_SIZE;
 
+// Piece type constants
+globalThis.PIECE_EMPTY = PIECE_EMPTY;
+globalThis.PIECE_PAWN = PIECE_PAWN;
+globalThis.PIECE_KNIGHT = PIECE_KNIGHT;
+globalThis.PIECE_BISHOP = PIECE_BISHOP;
+globalThis.PIECE_ROOK = PIECE_ROOK;
+globalThis.PIECE_QUEEN = PIECE_QUEEN;
+globalThis.PIECE_KING = PIECE_KING;
+
 // Utility: Get chunk key from coordinates
 globalThis.getChunkKey = (x, y) => {
     const chunkX = Math.floor(x / CHUNK_SIZE);
@@ -43,13 +52,13 @@ globalThis.getProceduralPiece = (x, y) => {
     // 0.2% chance of piece at any coordinate
     if (noise > 0.002) return PIECE_EMPTY;
     
-    // Determine piece type
+    // Determine piece type — NO PAWNS
     const typeNoise = seededRandom(seed + 1);
-    if (typeNoise < 0.70) return PIECE_PAWN;      // 70%
-    if (typeNoise < 0.85) return PIECE_KNIGHT;    // 15%
-    if (typeNoise < 0.95) return PIECE_BISHOP;    // 10%
-    if (typeNoise < 0.99) return PIECE_ROOK;      // 4%
-    return PIECE_QUEEN;                            // 1%
+    if (typeNoise < 0.35) return PIECE_KNIGHT;    // 35%
+    if (typeNoise < 0.60) return PIECE_BISHOP;    // 25%
+    if (typeNoise < 0.85) return PIECE_ROOK;      // 25%
+    if (typeNoise < 0.97) return PIECE_QUEEN;     // 12%
+    return PIECE_KING;                             // 3%
 };
 
 // Spatial Hash class
