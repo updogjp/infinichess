@@ -20,10 +20,10 @@
     "infinite"
   ],
   "engines": {
-    "node": ">=18.0.0"
+    "node": "22.x"
   },
   "dependencies": {
-    "uWebSockets.js": "github:uNetworking/uWebSockets.js"
+    "@yinghe/uwebsockets": "^20.31.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.11"
