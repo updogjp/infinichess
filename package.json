@@ -23,7 +23,7 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "uWebSockets.js": "github:uNetworking/uWebSockets.js#v20.60.0"
+    "uWebSockets.js": "github:uNetworking/uWebSockets.js#master"
   },
   "devDependencies": {
     "nodemon": "^3.1.11"
