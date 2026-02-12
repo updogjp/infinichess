@@ -67,7 +67,8 @@ const GAME_CONFIG = {
 // Piece spawner configuration
 const AI_CONFIG = {
   enabled: true, // Set to false to disable AI players
-  piecesPerPlayer: 6, // AI pieces to spawn per online player
+  minCount: 50, // Minimum AI pieces always on the board regardless of player count
+  piecesPerPlayer: 6, // Additional AI pieces to spawn per online player
   spawnRadius: 2500, // Spawn AI within this distance of online players
   removalRadius: 8000, // Remove AI pieces if they wander beyond this distance (much larger to prevent pop-in/out)
   moveInterval: 800, // AI makes moves every 800ms (matches interpolation timing better)
@@ -213,6 +214,9 @@ function move(startX, startY, finX, finY, playerId) {
     const currentKills = leaderboard.get(playerId) || 0;
     leaderboard.set(playerId, currentKills + 1);
     broadcastToAll(sendLeaderboard());
+
+    // Auto-evolve: check if player should transform
+    checkEvolution(playerId, finX, finY, currentKills + 1);
   }
 
   // Player piece capture: eliminate player (works for any piece type, not just king)
@@ -237,6 +241,33 @@ function move(startX, startY, finX, finY, playerId) {
     leaderboard.set(victimId, 0);
 
     broadcastToAll(sendLeaderboard());
+
+    // Auto-evolve: check if player should transform
+    if (playerId < AI_ID_MIN) {
+      checkEvolution(playerId, finX, finY, currentKills + 1);
+    }
+  }
+}
+
+// Check if a player should evolve after a capture
+function checkEvolution(playerId, pieceX, pieceY, newKills) {
+  const currentPiece = spatialHash.get(pieceX, pieceY);
+  if (currentPiece.team !== playerId) return;
+
+  const newPieceType = getEvolutionPiece(newKills, playerId);
+  if (newPieceType !== currentPiece.type) {
+    const meta = playerMetadata.get(playerId);
+    const playerLabel = meta ? meta.name : `#${playerId}`;
+    console.log(`[Evolve] ${playerLabel} evolved to ${PIECE_NAMES[newPieceType]} at ${newKills} kills`);
+
+    // Transform the piece on the board
+    setSquare(pieceX, pieceY, newPieceType, playerId);
+
+    // Update metadata
+    if (meta) {
+      meta.kingX = pieceX;
+      meta.kingY = pieceY;
+    }
   }
 }
 
@@ -359,7 +390,7 @@ function findSpawnLocation(pieceType = 6) {
 
 // Send viewport state to a client
 function sendViewportState(ws, centerX, centerY) {
-  const VIEWPORT_RADIUS = 30; // Reduced from 50 for faster initial load
+  const VIEWPORT_RADIUS = 50; // Match broadcastToViewport radius
 
   const pieces = spatialHash.queryRect(
     centerX - VIEWPORT_RADIUS,
@@ -370,6 +401,7 @@ function sendViewportState(ws, centerX, centerY) {
 
   // Limit pieces sent to prevent huge messages
   const maxPieces = Math.min(pieces.length, 500);
+  console.log(`[Viewport] Querying ${centerX},${centerY} ±${VIEWPORT_RADIUS}: found ${pieces.length} pieces, sending ${maxPieces}`);
 
   // Format: [magic, playerId, count, infiniteMode, x, y, type, team, x, y, type, team...]
   // Int32Array supports negative coords for infinite mode
@@ -428,7 +460,7 @@ function spawnAIPieces() {
   const players = Object.values(clients);
   if (players.length === 0) return;
 
-  const targetAIPieces = players.length * AI_CONFIG.piecesPerPlayer;
+  const targetAIPieces = Math.max(AI_CONFIG.minCount, players.length * AI_CONFIG.piecesPerPlayer);
   const currentAIPieces = aiPieces.size;
 
   // Spawn more AI if below target
@@ -658,7 +690,7 @@ if (AI_CONFIG.enabled) {
   setInterval(spawnAIPieces, 2000);
   setInterval(moveAIPieces, 1000);
   console.log(
-    `[AI] System enabled - ${AI_CONFIG.piecesPerPlayer} pieces per player`,
+    `[AI] System enabled - min ${AI_CONFIG.minCount}, +${AI_CONFIG.piecesPerPlayer} per player`,
   );
 } else {
   console.log(`[AI] System disabled`);
@@ -885,11 +917,13 @@ global.app = uWS
           ws.camera.y = decoded[2];
           ws.camera.scale = decoded[3] / 100; // Scale stored as integer * 100
 
-          // Send viewport state if needed (throttled)
-          const now = Date.now();
-          if (!ws.lastViewportSync || now - ws.lastViewportSync > 1000) {
-            ws.lastViewportSync = now;
-            sendViewportState(ws, ws.camera.x, ws.camera.y);
+          // Only send viewport syncs for spawned players
+          if (ws.verified && !ws.dead) {
+            const now = Date.now();
+            if (!ws.lastViewportSync || now - ws.lastViewportSync > 5000) {
+              ws.lastViewportSync = now;
+              sendViewportState(ws, ws.camera.x, ws.camera.y);
+            }
           }
           return;
         }
@@ -950,6 +984,7 @@ global.app = uWS
             }
 
             // Captcha disabled - auto-verify all connections
+            ws.verified = true;
           }
 
           if (Date.now() < ws.respawnTime) return;
@@ -964,9 +999,16 @@ global.app = uWS
 
           console.log(`[Spawn] Player ${ws.id} (${meta.name}) ready to spawn`);
 
-          // Spawn player's selected piece
-          const pieceType = meta.pieceType || 6; // Default to king if not set
+          // Always spawn as Queen — players evolve through captures
+          const pieceType = globalThis.PIECE_QUEEN;
           const spawn = findSpawnLocation(pieceType);
+
+          // Mark as verified BEFORE placing piece so broadcastToViewport includes this player
+          ws.verified = true;
+          ws.dead = false;
+          ws.camera.x = spawn.x;
+          ws.camera.y = spawn.y;
+
           setSquare(spawn.x, spawn.y, pieceType, ws.id);
 
           // Grant spawn immunity and broadcast to all clients
@@ -980,9 +1022,6 @@ global.app = uWS
           // Update metadata with king position
           meta.kingX = spawn.x;
           meta.kingY = spawn.y;
-
-          ws.verified = true;
-          ws.dead = false;
 
           console.log(
             `[Spawn] ✓ Player ${ws.id} (${meta.name}) spawned at ${toChessNotation(spawn.x, spawn.y)} (${SPAWN_IMMUNITY_MS / 1000}s immunity)`,

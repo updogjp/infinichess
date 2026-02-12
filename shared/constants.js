@@ -185,6 +185,55 @@ globalThis.SpatialHash = class SpatialHash {
     }
 };
 
+// Auto-evolve progression: Queen → Knight → Bishop/Rook (random) → King
+// Players start powerful and specialize as they capture
+const EVOLUTION_THRESHOLDS = [
+    { kills: 0,  piece: PIECE_QUEEN },   // Start: all directions, long range
+    { kills: 5,  piece: PIECE_KNIGHT },  // L-shape jumps, can hop over pieces
+    { kills: 10, piece: -1 },            // Random: Bishop or Rook
+    { kills: 18, piece: PIECE_KING },    // Final form: 1 square, all directions
+];
+globalThis.EVOLUTION_THRESHOLDS = EVOLUTION_THRESHOLDS;
+
+// Resolve -1 (random) to Bishop or Rook using a seed
+globalThis.getEvolutionPiece = (kills, seed) => {
+    let piece = PIECE_QUEEN;
+    for (const threshold of EVOLUTION_THRESHOLDS) {
+        if ((kills || 0) >= threshold.kills) {
+            piece = threshold.piece;
+        } else {
+            break;
+        }
+    }
+    // Resolve random step: use seed to deterministically pick Bishop or Rook
+    if (piece === -1) {
+        piece = ((seed || 0) % 2 === 0) ? PIECE_BISHOP : PIECE_ROOK;
+    }
+    return piece;
+};
+
+globalThis.getNextEvolution = (kills) => {
+    for (const threshold of EVOLUTION_THRESHOLDS) {
+        if ((kills || 0) < threshold.kills) {
+            return threshold;
+        }
+    }
+    return null; // Fully evolved
+};
+
+// Get the previous threshold's kill count (for XP bar progress calculation)
+globalThis.getCurrentThresholdKills = (kills) => {
+    let prev = 0;
+    for (const threshold of EVOLUTION_THRESHOLDS) {
+        if ((kills || 0) >= threshold.kills) {
+            prev = threshold.kills;
+        } else {
+            break;
+        }
+    }
+    return prev;
+};
+
 // Move range scales with captures: base 3 + 1 per kill, capped at 22
 const MOVE_RANGE_BASE = 3;
 const MOVE_RANGE_PER_KILL = 1;
@@ -231,26 +280,24 @@ globalThis.getAllStraightLineMoves = (moves, x, y, xInc, yInc, spatialHash, self
 const moveMap = [
     undefined, // 0 = empty
     
-    // 1 = pawn
+    // 1 = pawn (moves forward only, captures diagonally forward)
     (x, y, spatialHash, selfId, range) => {
         const moves = [];
         
-        // Orthogonal moves
-        const orthogonal = [[x+1,y], [x-1,y], [x,y+1], [x,y-1]];
-        for (const [mx, my] of orthogonal) {
-            const piece = spatialHash.get(mx, my);
-            if (piece.team !== selfId) {
-                moves.push([mx, my]);
-            }
+        // Forward move (y-1 = up on screen)
+        const fwd = spatialHash.get(x, y - 1);
+        if (fwd.type === PIECE_EMPTY) {
+            moves.push([x, y - 1]);
         }
         
-        // Diagonal captures (must have piece)
-        const diagonals = [[x+1,y+1], [x+1,y-1], [x-1,y+1], [x-1,y-1]];
-        for (const [mx, my] of diagonals) {
-            const piece = spatialHash.get(mx, my);
-            if (piece.team !== selfId && piece.type !== PIECE_EMPTY) {
-                moves.push([mx, my]);
-            }
+        // Diagonal forward captures (must have enemy piece)
+        const diagLeft = spatialHash.get(x - 1, y - 1);
+        if (diagLeft.team !== selfId && diagLeft.type !== PIECE_EMPTY) {
+            moves.push([x - 1, y - 1]);
+        }
+        const diagRight = spatialHash.get(x + 1, y - 1);
+        if (diagRight.team !== selfId && diagRight.type !== PIECE_EMPTY) {
+            moves.push([x + 1, y - 1]);
         }
         
         return moves;

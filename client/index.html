@@ -99,17 +99,17 @@
         </div>
 
         <div class="form-group">
-          <label>STARTING_PIECE</label>
-          <div class="piece-grid">
-            <div class="piece-option selected" data-piece="6" title="King">
-              ♔
-            </div>
-            <div class="piece-option" data-piece="5" title="Queen">♕</div>
-            <div class="piece-option" data-piece="4" title="Rook">♖</div>
-            <div class="piece-option" data-piece="3" title="Bishop">♗</div>
-            <div class="piece-option" data-piece="2" title="Knight">♘</div>
-            <div class="piece-option" data-piece="1" title="Pawn">♙</div>
+          <label>EVOLUTION_PATH</label>
+          <div class="evolution-path">
+            <span class="evo-step evo-current">♕ Queen</span>
+            <span class="evo-arrow">→</span>
+            <span class="evo-step">♘ Knight</span>
+            <span class="evo-arrow">→</span>
+            <span class="evo-step">♗/♖ ?</span>
+            <span class="evo-arrow">→</span>
+            <span class="evo-step">♔ King</span>
           </div>
+          <div class="evo-hint">Capture pieces to evolve. Final form: King.</div>
         </div>
 
         <div class="preview-panel">
@@ -180,6 +180,14 @@
         <div class="stat-row">
           <span class="stat-label">PIECES:</span>
           <span class="stat-value" id="stat-pieces">0</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">PIECE:</span>
+          <span class="stat-value" id="stat-piece">Queen</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">NEXT:</span>
+          <span class="stat-value" id="stat-next-evo">5 kills → Knight</span>
         </div>
         <div class="stat-row">
           <span class="stat-label">RANGE:</span>

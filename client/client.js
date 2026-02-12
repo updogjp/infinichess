@@ -980,6 +980,76 @@ function render() {
 
   ctx.setTransform(t);
 
+  // XP bar — evolution progress HUD
+  if (selfId !== -1 && !gameOver) {
+    const myKills = (window.playerNamesMap && window.playerNamesMap[selfId] && window.playerNamesMap[selfId].kills !== undefined)
+      ? window.playerNamesMap[selfId].kills : 0;
+    const next = getNextEvolution(myKills);
+    const prevKills = getCurrentThresholdKills(myKills);
+    const currentPieceType = getEvolutionPiece(myKills, selfId);
+    const currentPieceName = PIECE_NAMES[currentPieceType] || "Queen";
+
+    const barW = Math.min(320, canvas.w * 0.4);
+    const barH = 14;
+    const barX = (canvas.w - barW) / 2;
+    const barY = canvas.h - 40;
+
+    // Background
+    ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+    ctx.fillRect(barX - 1, barY - 1, barW + 2, barH + 2);
+
+    if (next) {
+      const killsIntoTier = myKills - prevKills;
+      const tierTotal = next.kills - prevKills;
+      const progress = Math.min(1, killsIntoTier / tierTotal);
+
+      // Fill
+      const color = teamToColor(selfId);
+      ctx.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, 0.7)`;
+      ctx.fillRect(barX, barY, barW * progress, barH);
+
+      // Border
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.25)";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(barX, barY, barW, barH);
+
+      // Next piece name (resolve -1 for display)
+      let nextName = PIECE_NAMES[next.piece] || "?";
+      if (next.piece === -1) nextName = "Bishop/Rook";
+
+      // Labels
+      ctx.font = "500 10px 'Sometype Mono', monospace";
+      ctx.textAlign = "left";
+      ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
+      ctx.fillText(currentPieceName.toUpperCase(), barX, barY - 4);
+
+      ctx.textAlign = "right";
+      ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
+      ctx.fillText(`${next.kills - myKills} → ${nextName}`, barX + barW, barY - 4);
+
+      // Kill count inside bar
+      ctx.textAlign = "center";
+      ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
+      ctx.fillText(`${myKills} / ${next.kills}`, barX + barW / 2, barY + barH - 3);
+    } else {
+      // Fully evolved — fill bar completely
+      const color = teamToColor(selfId);
+      ctx.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, 0.7)`;
+      ctx.fillRect(barX, barY, barW, barH);
+
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.25)";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(barX, barY, barW, barH);
+
+      ctx.font = "500 10px 'Sometype Mono', monospace";
+      ctx.textAlign = "center";
+      ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
+      ctx.fillText(`${currentPieceName.toUpperCase()} — FINAL FORM`, barX + barW / 2, barY + barH - 3);
+    }
+
+    ctx.textAlign = "left"; // Reset
+  }
+
   // Minimap (simplified for infinite world)
   renderMinimap();
 
@@ -1098,12 +1168,30 @@ function render() {
       document.getElementById("stat-pieces").textContent = myPieceCount;
     }
 
-    // Update move range display
+    // Update move range and evolution display
     const myKills = (window.playerNamesMap && window.playerNamesMap[selfId])
       ? window.playerNamesMap[selfId].kills : 0;
     const rangeEl = document.getElementById("stat-range");
     if (rangeEl) {
       rangeEl.textContent = getMoveRange(myKills);
+    }
+
+    const pieceEl = document.getElementById("stat-piece");
+    if (pieceEl) {
+      const currentPieceType = getEvolutionPiece(myKills, selfId);
+      pieceEl.textContent = PIECE_NAMES[currentPieceType] || "Queen";
+    }
+
+    const nextEvoEl = document.getElementById("stat-next-evo");
+    if (nextEvoEl) {
+      const next = getNextEvolution(myKills);
+      if (next) {
+        let nextName = PIECE_NAMES[next.piece] || "?";
+        if (next.piece === -1) nextName = "Bishop/Rook";
+        nextEvoEl.textContent = `${next.kills - myKills} kills → ${nextName}`;
+      } else {
+        nextEvoEl.textContent = "MAX";
+      }
     }
 
     document.getElementById("stat-zoom").textContent =

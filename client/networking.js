@@ -73,15 +73,16 @@ ws.addEventListener("message", function (data) {
 
   // Viewport sync (initial or periodic update) — Int32Array
   if (i32 && i32[0] === 55553) {
+    const isFirstSync = selfId === -1;
     selfId = i32[1];
     const count = i32[2];
     window.infiniteMode = i32[3] === 1;
 
     console.log(
-      `🔄 Viewport sync: selfId=${selfId}, pieces=${count}, infiniteMode=${window.infiniteMode}`,
+      `🔄 Viewport sync: selfId=${selfId}, pieces=${count}, infiniteMode=${window.infiniteMode}, isFirstSync=${isFirstSync}`,
     );
 
-    // Track existing pieces before clearing for fade transitions
+    // Track existing pieces before updating for fade transitions
     const oldPieceKeys = new Set();
     const oldPieces = spatialHash.getAllPieces();
     for (const p of oldPieces) {
@@ -114,19 +115,22 @@ ws.addEventListener("message", function (data) {
       if (team === selfId && myPieceX === null) {
         myPieceX = x;
         myPieceY = y;
-        console.log(`🎯 Found my piece (type ${type}) at ${x},${y}`);
       }
     }
 
-    // Center camera on player's piece (center of the square)
-    if (myPieceX !== null && myPieceY !== null) {
+    // Center camera on our piece if we just spawned (had no piece before)
+    const hadPieceBefore = window._hadMyPiece || false;
+    if (myPieceX !== null && myPieceY !== null && !hadPieceBefore) {
       camera.x = -(myPieceX * squareSize + squareSize / 2);
       camera.y = -(myPieceY * squareSize + squareSize / 2);
     }
+    window._hadMyPiece = myPieceX !== null;
 
     // Show chat UI and leaderboard after first sync
-    const chatContainer = document.querySelector(".chatContainer");
-    chatContainer.classList.remove("hidden");
+    if (isFirstSync) {
+      const chatContainer = document.querySelector(".chatContainer");
+      chatContainer.classList.remove("hidden");
+    }
 
     changed = true;
     return;
@@ -148,24 +152,34 @@ ws.addEventListener("message", function (data) {
       startFadeIn(x, y);
     }
 
-    // Our piece placed (respawn or initial spawn) - any piece type
+    // Our piece: detect spawn vs evolution
     if (piece !== 0 && team === selfId) {
-      gameOver = false;
-      gameOverTime = undefined;
-      gameOverAlpha = 0;
-      window.gameOverKiller = null;
-      interpSquare = [x, y];
+      const isEvolution = oldPiece.team === selfId && oldPiece.type !== 0 && oldPiece.type !== piece;
+      const isSpawn = oldPiece.type === 0 || oldPiece.team !== selfId;
 
-      // Recenter camera on our new piece
-      camera.x = -(x * squareSize + squareSize / 2);
-      camera.y = -(y * squareSize + squareSize / 2);
+      if (isEvolution) {
+        // Evolution — show toast, don't recenter camera
+        const pieceName = PIECE_NAMES[piece] || "piece";
+        window.showToast(`EVOLVED → ${pieceName.toUpperCase()}`, "info", 3000);
+      }
 
-      // Reset cooldown so player can move immediately
-      cooldownEndTime = 0;
+      if (isSpawn) {
+        // Spawn or respawn — reset game state and recenter
+        gameOver = false;
+        gameOverTime = undefined;
+        gameOverAlpha = 0;
+        window.gameOverKiller = null;
+        interpSquare = [x, y];
 
-      setTimeout(() => {
-        if (gameOver === false) interpSquare = undefined;
-      }, 1200);
+        camera.x = -(x * squareSize + squareSize / 2);
+        camera.y = -(y * squareSize + squareSize / 2);
+
+        cooldownEndTime = 0;
+
+        setTimeout(() => {
+          if (gameOver === false) interpSquare = undefined;
+        }, 1200);
+      }
     }
 
     changed = true;
@@ -224,6 +238,7 @@ ws.addEventListener("message", function (data) {
       interpSquare = [finX, finY];
       gameOver = true;
       gameOverTime = time;
+      window._hadMyPiece = false; // Reset so camera recenters on respawn
 
       // Store killer info for game over UI
       const killerInfo = window.playerNamesMap && window.playerNamesMap[playerId];
@@ -421,6 +436,11 @@ ws.onopen = () => {
   msgs.length = 0;
 };
 
+ws.onerror = (error) => {
+  console.error("❌ WebSocket error:", error);
+  window.showToast("Connection error - check server", "error", 5000);
+};
+
 ws.onclose = () => {
   connected = false;
   console.log("Disconnected from server");
@@ -437,7 +457,7 @@ ws.onclose = () => {
 
 // Send camera position periodically for viewport syncing
 setInterval(() => {
-  if (connected && camera) {
+  if (connected && camera && window._hadMyPiece) {
     const buf = new Int32Array(4);
     buf[0] = 55552; // Magic number for camera update
     // Send grid coordinates (camera is negative world pixel pos)
@@ -477,16 +497,8 @@ function initPlayerSetup() {
     });
   });
 
-  // Piece selection
-  const pieceOptions = document.querySelectorAll(".piece-option");
-  pieceOptions.forEach((option) => {
-    option.addEventListener("click", () => {
-      pieceOptions.forEach((o) => o.classList.remove("selected"));
-      option.classList.add("selected");
-      window.playerPiece = parseInt(option.dataset.piece);
-      updatePreview();
-    });
-  });
+  // Always start as King (evolution system)
+  window.playerPiece = 6;
 
   // Name input
   nameInput.addEventListener("input", () => {
@@ -722,10 +734,12 @@ window.updateChatBubbles = function () {
 {
   const checkConnection = () => {
     if (ws.readyState === WebSocket.OPEN) {
+      console.log("✓ WebSocket connected, showing player setup modal");
       document.getElementById("fullscreenDiv").classList.add("hidden");
       document.getElementById("playerSetupDiv").classList.remove("hidden");
       initPlayerSetup();
     } else {
+      console.log(`⏳ Waiting for WebSocket... state=${ws.readyState}`);
       setTimeout(checkConnection, 100);
     }
   };
