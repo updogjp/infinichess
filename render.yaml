@@ -2,7 +2,7 @@ services:
   - type: web
     name: infinichess
     env: node
-    nodeVersion: 22
+    nodeVersion: 20
     plan: free
     buildCommand: npm install && npm run build
     startCommand: npm start
