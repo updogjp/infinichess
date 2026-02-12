@@ -1,4 +1,8 @@
-const HOST = location.origin.replace(/^http/, "ws");
+// Determine WebSocket URL based on environment
+const isDev = location.hostname === "localhost" || location.hostname === "127.0.0.1";
+const HOST = isDev 
+  ? location.origin.replace(/^http/, "ws")
+  : "wss://infinichess.onrender.com";
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 
