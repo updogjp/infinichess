@@ -119,11 +119,12 @@ window.onmousedown = (e) => {
         legalMoves[i][1] === squareY &&
         performance.now() >= cooldownEndTime
       ) {
-        const buf = new Uint16Array(4);
-        buf[0] = selectedSquareX;
-        buf[1] = selectedSquareY;
-        buf[2] = squareX;
-        buf[3] = squareY;
+        const buf = new Int32Array(5);
+        buf[0] = 55550; // Magic number for move
+        buf[1] = selectedSquareX;
+        buf[2] = selectedSquareY;
+        buf[3] = squareX;
+        buf[4] = squareY;
         send(buf);
 
         legalMoves = [];
@@ -190,11 +191,12 @@ window.onmouseup = (e) => {
     }
 
     if (legal === true && performance.now() >= cooldownEndTime) {
-      const buf = new Uint16Array(4);
-      buf[0] = selectedSquareX;
-      buf[1] = selectedSquareY;
-      buf[2] = newX;
-      buf[3] = newY;
+      const buf = new Int32Array(5);
+      buf[0] = 55550; // Magic number for move
+      buf[1] = selectedSquareX;
+      buf[2] = selectedSquareY;
+      buf[3] = newX;
+      buf[4] = newY;
       send(buf);
 
       legalMoves = [];
@@ -1149,12 +1151,15 @@ function renderMinimap() {
 
     if (window.infiniteMode) {
       // For infinite world, show nearby pieces relative to camera
+      // camera.x/y are negative pixel positions, so negate to get world grid coords
+      const camGridX = Math.floor(-camera.x / squareSize);
+      const camGridY = Math.floor(-camera.y / squareSize);
       const VIEW_DIST = 100; // squares
       const nearbyPieces = window.spatialHash.queryRect(
-        camera.x / squareSize - VIEW_DIST,
-        camera.y / squareSize - VIEW_DIST,
-        camera.x / squareSize + VIEW_DIST,
-        camera.y / squareSize + VIEW_DIST,
+        camGridX - VIEW_DIST,
+        camGridY - VIEW_DIST,
+        camGridX + VIEW_DIST,
+        camGridY + VIEW_DIST,
       );
 
       const scale = size / (VIEW_DIST * 2);
@@ -1162,8 +1167,8 @@ function renderMinimap() {
       for (const piece of nearbyPieces) {
         if (piece.type === 0 || piece.team === 0) continue;
 
-        const relX = (piece.x - camera.x / squareSize + VIEW_DIST) * scale;
-        const relY = (piece.y - camera.y / squareSize + VIEW_DIST) * scale;
+        const relX = (piece.x - camGridX + VIEW_DIST) * scale;
+        const relY = (piece.y - camGridY + VIEW_DIST) * scale;
 
         if (relX >= 0 && relX < size && relY >= 0 && relY < size) {
           let color = teamToColor(piece.team);

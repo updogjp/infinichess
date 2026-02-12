@@ -65,14 +65,17 @@ window.aiCooldowns = new Map();
 const activeChatBubbles = new Map(); // playerId -> { text, time, element }
 
 ws.addEventListener("message", function (data) {
-  const msg = new Uint16Array(data.data);
   const u8 = new Uint8Array(data.data);
+  // Use Int32Array for coordinate messages, Uint16Array for legacy text messages
+  const i32 = data.data.byteLength >= 4 && data.data.byteLength % 4 === 0
+    ? new Int32Array(data.data) : null;
+  const msg = new Uint16Array(data.data.byteLength % 2 === 0 ? data.data : new ArrayBuffer(0));
 
-  // Viewport sync (initial or periodic update)
-  if (msg[0] === 55553) {
-    selfId = msg[1];
-    const count = msg[2];
-    window.infiniteMode = msg[3] === 1;
+  // Viewport sync (initial or periodic update) — Int32Array
+  if (i32 && i32[0] === 55553) {
+    selfId = i32[1];
+    const count = i32[2];
+    window.infiniteMode = i32[3] === 1;
 
     console.log(
       `🔄 Viewport sync: selfId=${selfId}, pieces=${count}, infiniteMode=${window.infiniteMode}`,
@@ -95,10 +98,10 @@ ws.addEventListener("message", function (data) {
     const newPieceKeys = new Set();
 
     for (let j = 0; j < count; j++) {
-      const x = msg[i++];
-      const y = msg[i++];
-      const type = msg[i++];
-      const team = msg[i++];
+      const x = i32[i++];
+      const y = i32[i++];
+      const type = i32[i++];
+      const team = i32[i++];
       spatialHash.set(x, y, type, team);
       newPieceKeys.add(`${x},${y}`);
 
@@ -129,12 +132,12 @@ ws.addEventListener("message", function (data) {
     return;
   }
 
-  // Set square (single piece update)
-  else if (msg[0] === 55555 && msg.byteLength === 10) {
-    const x = msg[1];
-    const y = msg[2];
-    const piece = msg[3];
-    const team = msg[4];
+  // Set square (single piece update) — Int32Array
+  else if (i32 && i32[0] === 55555 && data.data.byteLength === 20) {
+    const x = i32[1];
+    const y = i32[2];
+    const piece = i32[3];
+    const team = i32[4];
 
     const oldPiece = spatialHash.get(x, y);
 
@@ -169,13 +172,13 @@ ws.addEventListener("message", function (data) {
     return;
   }
 
-  // Move piece
-  else if (msg[0] === 55554 && msg.byteLength === 12) {
-    const startX = msg[1];
-    const startY = msg[2];
-    const finX = msg[3];
-    const finY = msg[4];
-    const playerId = msg[5];
+  // Move piece — Int32Array
+  else if (i32 && i32[0] === 55554 && data.data.byteLength === 24) {
+    const startX = i32[1];
+    const startY = i32[2];
+    const finX = i32[3];
+    const finY = i32[4];
+    const playerId = i32[5];
 
     const movingPiece = spatialHash.get(startX, startY);
     const endPiece = spatialHash.get(finX, finY);
@@ -435,7 +438,7 @@ ws.onclose = () => {
 // Send camera position periodically for viewport syncing
 setInterval(() => {
   if (connected && camera) {
-    const buf = new Int16Array(4);
+    const buf = new Int32Array(4);
     buf[0] = 55552; // Magic number for camera update
     // Send grid coordinates (camera is negative world pixel pos)
     buf[1] = Math.floor(-camera.x / squareSize);

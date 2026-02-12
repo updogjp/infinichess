@@ -315,17 +315,24 @@ const moveMap = [
     },
 ];
 
-// Chess notation for 64x64 board
-// Columns: a-z (0-25), 2a-2z (26-51), 3a-3l (52-63)
-// Rows: 64 (y=0, top) down to 1 (y=63, bottom) — chess convention
+// Chess notation — works for any integer coordinate (infinite or bounded)
+// Columns: ... -b, -a, a, b, ... z, aa, ab, ... az, ba, ...
+// Rows: negated y (positive y = lower rows in chess convention)
 globalThis.colToNotation = (col) => {
-    const letter = String.fromCharCode(97 + (col % 26));
-    const prefix = Math.floor(col / 26);
-    return prefix === 0 ? letter : `${prefix + 1}${letter}`;
+    if (col < 0) {
+        return '-' + colToNotation(-col - 1);
+    }
+    let result = '';
+    let n = col;
+    do {
+        result = String.fromCharCode(97 + (n % 26)) + result;
+        n = Math.floor(n / 26) - 1;
+    } while (n >= 0);
+    return result;
 };
 
 globalThis.rowToNotation = (row) => {
-    return String(64 - row);
+    return String(-row);
 };
 
 globalThis.toChessNotation = (x, y) => {

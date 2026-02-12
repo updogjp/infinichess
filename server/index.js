@@ -61,7 +61,7 @@ if (isDev) {
 
 // Game mode configuration
 const GAME_CONFIG = {
-  infiniteMode: false, // Set to true for infinite world, false for 64x64 board
+  infiniteMode: true, // Set to true for infinite world, false for 64x64 board
 };
 
 // Piece spawner configuration
@@ -152,7 +152,8 @@ function setSquare(x, y, piece, team) {
   spatialHash.set(x, y, piece, team);
 
   // Broadcast to players whose viewport contains this square
-  const buf = new Uint16Array(5);
+  // Int32Array supports negative coords for infinite mode
+  const buf = new Int32Array(5);
   buf[0] = 55555; // Magic number for setSquare
   buf[1] = x;
   buf[2] = y;
@@ -183,8 +184,8 @@ function move(startX, startY, finX, finY, playerId) {
   spatialHash.set(finX, finY, startPiece.type, playerId);
   spatialHash.set(startX, startY, 0, 0);
 
-  // Broadcast move
-  const buf = new Uint16Array(6);
+  // Broadcast move (Int32Array for infinite mode negative coords)
+  const buf = new Int32Array(6);
   buf[0] = 55554; // Magic number for move
   buf[1] = startX;
   buf[2] = startY;
@@ -371,7 +372,8 @@ function sendViewportState(ws, centerX, centerY) {
   const maxPieces = Math.min(pieces.length, 500);
 
   // Format: [magic, playerId, count, infiniteMode, x, y, type, team, x, y, type, team...]
-  const buf = new Uint16Array(4 + maxPieces * 4);
+  // Int32Array supports negative coords for infinite mode
+  const buf = new Int32Array(4 + maxPieces * 4);
   buf[0] = 55553; // Magic number for viewport sync
   buf[1] = ws.id;
   buf[2] = maxPieces;
@@ -400,8 +402,8 @@ global.clients = {};
 let connectedIps = {};
 let id = 1;
 
-// AI IDs use range 10000-60000 to fit in Uint16Array (max 65535)
-// Player IDs use 1-9999
+// AI IDs use range 10000-60000, Player IDs use 1-9999
+// Coordinate messages use Int32Array; non-coord messages (leaderboard, immunity) still use Uint16
 const AI_ID_MIN = 10000;
 const AI_ID_MAX = 60000;
 
@@ -874,9 +876,9 @@ global.app = uWS
     message: (ws, data) => {
       const u8 = new Uint8Array(data);
 
-      // Camera position update (client sends grid coordinates)
-      if (data.byteLength === 12) {
-        const decoded = new Int16Array(data);
+      // Camera position update (client sends grid coordinates as Int32)
+      if (data.byteLength === 16) {
+        const decoded = new Int32Array(data);
         if (decoded[0] === 55552) {
           // Client sends grid coords directly
           ws.camera.x = decoded[1];
@@ -1088,15 +1090,17 @@ global.app = uWS
         broadcastToAll(buf);
       }
 
-      // Move piece
-      else if (data.byteLength === 8) {
+      // Move piece (Int32Array: [magic, startX, startY, finX, finY] = 20 bytes)
+      else if (data.byteLength === 20) {
+        const moveData = new Int32Array(data);
+        if (moveData[0] !== 55550) return; // Magic number for move
         const now = Date.now();
         if (now - ws.lastMovedTime < moveCooldown) return;
 
-        const startX = decoded[0];
-        const startY = decoded[1];
-        const finX = decoded[2];
-        const finY = decoded[3];
+        const startX = moveData[1];
+        const startY = moveData[2];
+        const finX = moveData[3];
+        const finY = moveData[4];
 
         const startPiece = spatialHash.get(startX, startY);
 
