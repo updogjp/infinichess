@@ -13,6 +13,7 @@ const PIECE_KING = 6;
 // Game Constants
 globalThis.moveCooldown = 1.5 * 1000;
 globalThis.respawnTime = 5 * 1000;
+globalThis.SPAWN_IMMUNITY_MS = 3 * 1000;
 globalThis.CHUNK_SIZE = CHUNK_SIZE;
 
 // Utility: Get chunk key from coordinates

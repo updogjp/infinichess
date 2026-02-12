@@ -145,10 +145,21 @@ ws.addEventListener("message", function (data) {
       startFadeIn(x, y);
     }
 
-    if (piece === 6 && team === selfId) {
+    // Our piece placed (respawn or initial spawn) - any piece type
+    if (piece !== 0 && team === selfId) {
       gameOver = false;
       gameOverTime = undefined;
+      gameOverAlpha = 0;
+      window.gameOverKiller = null;
       interpSquare = [x, y];
+
+      // Recenter camera on our new piece
+      camera.x = -(x * squareSize + squareSize / 2);
+      camera.y = -(y * squareSize + squareSize / 2);
+
+      // Reset cooldown so player can move immediately
+      cooldownEndTime = 0;
+
       setTimeout(() => {
         if (gameOver === false) interpSquare = undefined;
       }, 1200);
@@ -168,26 +179,37 @@ ws.addEventListener("message", function (data) {
 
     const movingPiece = spatialHash.get(startX, startY);
     const endPiece = spatialHash.get(finX, finY);
+    const isCapture = endPiece.type !== 0;
 
-    // Play sounds
-    if (audioLoaded === true && playerId === selfId) {
+    // Play sounds for all visible captures/moves (not just self)
+    if (audioLoaded === true) {
       try {
-        if (endPiece.type !== 0) {
-          audios.capture[Math.random() < 0.5 ? 1 : 0].play();
-        } else {
+        if (isCapture) {
+          const snd = audios.capture[Math.random() < 0.5 ? 1 : 0].cloneNode();
+          // Quieter for non-self captures
+          snd.volume = playerId === selfId ? 1.0 : 0.4;
+          snd.play();
+        } else if (playerId === selfId) {
           audios.move[Math.random() < 0.5 ? 0 : 1].play();
         }
       } catch (e) {}
     }
 
+    // Visual capture effect on the capture square
+    if (isCapture && window.triggerCaptureEffect) {
+      const attackerColor = teamToColor(playerId);
+      window.triggerCaptureEffect(finX, finY, attackerColor, endPiece.type);
+    }
+
     // Kill feed notification for captures
-    if (endPiece.type !== 0 && endPiece.team !== 0) {
+    if (isCapture && endPiece.team !== 0) {
       const attackerInfo = window.playerNamesMap && window.playerNamesMap[playerId];
       const victimInfo = window.playerNamesMap && window.playerNamesMap[endPiece.team];
       const attackerName = attackerInfo ? attackerInfo.name : (playerId >= 10000 ? "AI" : `#${playerId}`);
       const victimName = victimInfo ? victimInfo.name : (endPiece.team >= 10000 ? "AI" : `#${endPiece.team}`);
       const pieceName = PIECE_NAMES[endPiece.type] || "piece";
-      showKillFeed(attackerName, victimName, pieceName, playerId === selfId);
+      const isSelf = playerId === selfId || endPiece.team === selfId;
+      showKillFeed(attackerName, victimName, pieceName, isSelf);
     }
 
     // Check if our piece was captured (game over when we lose our piece)
@@ -200,6 +222,16 @@ ws.addEventListener("message", function (data) {
       gameOver = true;
       gameOverTime = time;
 
+      // Store killer info for game over UI
+      const killerInfo = window.playerNamesMap && window.playerNamesMap[playerId];
+      const killerName = killerInfo ? killerInfo.name : (playerId >= 10000 ? "AI" : `#${playerId}`);
+      window.gameOverKiller = killerName;
+
+      // Screen shake on death
+      if (window.triggerScreenShake) {
+        window.triggerScreenShake(15);
+      }
+
       try {
         audios.gameover[0].play();
       } catch (e) {}
@@ -208,6 +240,16 @@ ws.addEventListener("message", function (data) {
         const buf = new Uint8Array(0);
         send(buf);
       }, respawnTime - 100);
+    }
+
+    // Small screen shake when player makes a capture
+    if (isCapture && playerId === selfId && window.triggerScreenShake) {
+      window.triggerScreenShake(5);
+    }
+
+    // Track last move for highlight
+    if (window.setLastMove) {
+      window.setLastMove(startX, startY, finX, finY);
     }
 
     // Update spatial hash
@@ -222,10 +264,9 @@ ws.addEventListener("message", function (data) {
 
     // Track AI cooldowns for rendering cooldown bars
     if (playerId >= 10000) {
-      const aiCooldownMs = 800;
       window.aiCooldowns.set(playerId, {
-        endTime: performance.now() + aiCooldownMs,
-        total: aiCooldownMs,
+        endTime: performance.now() + moveCooldown,
+        total: moveCooldown,
       });
     }
 
@@ -241,7 +282,24 @@ ws.addEventListener("message", function (data) {
         draggingSelected = false;
         moveWasDrag = false;
       }
-      curMoveCooldown = window.moveCooldown;
+    }
+
+    changed = true;
+    return;
+  }
+
+  // Spawn immunity notification
+  else if (msg[0] === 55556 && msg.byteLength === 6) {
+    const immunePlayerId = msg[1];
+    const durationMs = msg[2] * 100; // Convert from 100ms units
+    window.spawnImmunities = window.spawnImmunities || new Map();
+    window.spawnImmunities.set(immunePlayerId, performance.now() + durationMs);
+
+    // If it's us, reset game over state
+    if (immunePlayerId === selfId) {
+      gameOver = false;
+      gameOverAlpha = 0;
+      window.gameOverKiller = null;
     }
 
     changed = true;
@@ -544,11 +602,13 @@ function sendPlayerInfo() {
 const MAX_BUBBLES_PER_PLAYER = 3;
 
 function showChatBubble(playerId, text) {
-  // Find player's piece (any piece owned by them)
-  const pieces = spatialHash.getAllPieces();
+  // Find player's piece near camera viewport
+  const camGridX = Math.floor(-camera.x / squareSize);
+  const camGridY = Math.floor(-camera.y / squareSize);
+  const nearby = spatialHash.queryRadius(camGridX, camGridY, 50);
   let playerPiece = null;
 
-  for (const piece of pieces) {
+  for (const piece of nearby) {
     if (piece.team === playerId && piece.type !== 0) {
       playerPiece = piece;
       break;
@@ -619,11 +679,11 @@ window.updateChatBubbles = function () {
   activeChatBubbles.forEach((bubbles, playerId) => {
     if (!bubbles || bubbles.length === 0) return;
 
-    // Update piece position from spatial hash
-    const pieces = spatialHash.getAllPieces();
+    // Update piece position from spatial hash (search near last known position)
     let pieceX = bubbles[0].pieceX;
     let pieceY = bubbles[0].pieceY;
-    for (const piece of pieces) {
+    const nearby = spatialHash.queryRadius(pieceX, pieceY, 15);
+    for (const piece of nearby) {
       if (piece.team === playerId && piece.type !== 0) {
         pieceX = piece.x;
         pieceY = piece.y;

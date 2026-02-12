@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node ./server/index.js",
     "dev": "nodemon ./server/index.js --watch server --watch shared --watch client",
+    "build": "node --check server/index.js && echo 'Build successful'",
     "clean": "rm -f server/*.dat"
   },
   "type": "module",

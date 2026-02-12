@@ -287,6 +287,41 @@ let gameOver = false,
   gameOverAlpha = 0,
   gameOverTime;
 
+// Capture visual effects
+const captureEffects = new Map(); // "x,y" -> { startTime, color, pieceType }
+const CAPTURE_EFFECT_DURATION = 600; // ms
+
+// Last move highlight
+let lastMoveFrom = null; // { x, y }
+let lastMoveTo = null; // { x, y }
+
+window.setLastMove = (fromX, fromY, toX, toY) => {
+  lastMoveFrom = { x: fromX, y: fromY };
+  lastMoveTo = { x: toX, y: toY };
+  changed = true;
+};
+
+// Screen shake state
+let shakeIntensity = 0;
+let shakeDecay = 0;
+let shakeOffsetX = 0;
+let shakeOffsetY = 0;
+
+window.triggerCaptureEffect = (x, y, color, pieceType) => {
+  captureEffects.set(`${x},${y}`, {
+    startTime: performance.now(),
+    color: color,
+    pieceType: pieceType,
+  });
+  changed = true;
+};
+
+window.triggerScreenShake = (intensity) => {
+  shakeIntensity = intensity;
+  shakeDecay = intensity;
+  changed = true;
+};
+
 let minimapCanvas = document.getElementById("minimapCanvas");
 let cx = minimapCanvas.getContext("2d");
 
@@ -351,20 +386,14 @@ function render() {
     }
   }
 
-  // Camera follow mode: smoothly track player's piece
-  if (window.followCamera && selfId !== -1 && window.spatialHash) {
-    const pieces = window.spatialHash.getAllPieces();
-    for (const piece of pieces) {
-      if (piece.team === selfId) {
-        const targetX = -(piece.x * squareSize + squareSize / 2);
-        const targetY = -(piece.y * squareSize + squareSize / 2);
-        const followLerp = 1 - Math.pow(0.01, dt / 1000);
-        camera.x = interpolate(camera.x, targetX, followLerp);
-        camera.y = interpolate(camera.y, targetY, followLerp);
-        changed = true;
-        break;
-      }
-    }
+  // Camera follow mode: smoothly track player's piece using cached position
+  if (window.followCamera && selfId !== -1 && window.myKingX !== undefined) {
+    const targetX = -(window.myKingX * squareSize + squareSize / 2);
+    const targetY = -(window.myKingY * squareSize + squareSize / 2);
+    const followLerp = 1 - Math.pow(0.01, dt / 1000);
+    camera.x = interpolate(camera.x, targetX, followLerp);
+    camera.y = interpolate(camera.y, targetY, followLerp);
+    changed = true;
   }
 
   // Apply 64x64 boundary constraints if not in infinite mode
@@ -394,9 +423,22 @@ function render() {
   // Keep rendering during active interpolations or fades
   if (interpolatingPieces && Object.keys(interpolatingPieces).length > 0) changed = true;
   if (window.aiCooldowns && window.aiCooldowns.size > 0) changed = true;
+  if (captureEffects.size > 0) changed = true;
+  if (shakeIntensity > 0.1) changed = true;
 
   if (!changed && !interpSquare) return;
   changed = false;
+
+  // Process screen shake
+  if (shakeIntensity > 0.1) {
+    shakeIntensity *= Math.pow(0.001, dt / 1000); // Exponential decay
+    shakeOffsetX = (Math.random() - 0.5) * shakeIntensity * 2;
+    shakeOffsetY = (Math.random() - 0.5) * shakeIntensity * 2;
+  } else {
+    shakeIntensity = 0;
+    shakeOffsetX = 0;
+    shakeOffsetY = 0;
+  }
 
   // Clear background
   ctx.fillStyle = "#121212";
@@ -404,7 +446,7 @@ function render() {
 
   const t = ctx.getTransform();
 
-  ctx.translate(canvas.w / 2, canvas.h / 2);
+  ctx.translate(canvas.w / 2 + shakeOffsetX, canvas.h / 2 + shakeOffsetY);
   ctx.scale(camera.scale, camera.scale);
   ctx.translate(camera.x, camera.y);
 
@@ -451,10 +493,17 @@ function render() {
     ctx.strokeRect(0, 0, 64 * squareSize, 64 * squareSize);
   }
 
-  // Render legal moves
+  // Render last move highlight
+  if (lastMoveFrom && lastMoveTo) {
+    ctx.globalAlpha = 0.15;
+    ctx.fillStyle = "#ffcc44";
+    ctx.fillRect(lastMoveFrom.x * squareSize, lastMoveFrom.y * squareSize, squareSize, squareSize);
+    ctx.fillRect(lastMoveTo.x * squareSize, lastMoveTo.y * squareSize, squareSize, squareSize);
+    ctx.globalAlpha = 1;
+  }
+
+  // Render legal moves with capture indicators
   if (legalMoves) {
-    ctx.globalAlpha = 0.18;
-    ctx.fillStyle = "black";
     for (let i = 0; i < legalMoves.length; i++) {
       const [mx, my] = legalMoves[i];
       if (mx < startX || mx > endX || my < startY || my > endY) continue;
@@ -462,10 +511,26 @@ function render() {
       const x = mx * squareSize + squareSize / 2;
       const y = my * squareSize + squareSize / 2;
 
-      ctx.beginPath();
-      ctx.arc(x, y, squareSize / 7, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.closePath();
+      // Check if this move is a capture
+      const targetPiece = window.spatialHash ? window.spatialHash.get(mx, my) : { type: 0 };
+      if (targetPiece.type !== 0) {
+        // Capture indicator: hollow ring around the square
+        ctx.globalAlpha = 0.35;
+        ctx.strokeStyle = "#ff4444";
+        ctx.lineWidth = squareSize * 0.08;
+        ctx.beginPath();
+        ctx.arc(x, y, squareSize * 0.42, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.closePath();
+      } else {
+        // Empty move: small dot
+        ctx.globalAlpha = 0.18;
+        ctx.fillStyle = "black";
+        ctx.beginPath();
+        ctx.arc(x, y, squareSize / 7, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.closePath();
+      }
     }
     ctx.globalAlpha = 1;
   }
@@ -596,6 +661,77 @@ function render() {
     }
   }
 
+  // Draw spawn immunity indicator (squircle with pulsing glow)
+  if (window.spawnImmunities && window.spawnImmunities.size > 0) {
+    const now = performance.now();
+    const expiredImmunities = [];
+
+    for (const [immuneTeam, expiryTime] of window.spawnImmunities) {
+      if (now >= expiryTime) {
+        expiredImmunities.push(immuneTeam);
+        continue;
+      }
+
+      // Find the immune piece in visible pieces
+      let immunePiece = null;
+      for (const p of visiblePieces) {
+        if (p.team === immuneTeam && p.type !== 0) {
+          immunePiece = p;
+          break;
+        }
+      }
+      if (!immunePiece) continue;
+
+      const remaining = expiryTime - now;
+      const progress = 1 - remaining / SPAWN_IMMUNITY_MS;
+      const pulse = 0.4 + Math.sin(now / 200) * 0.2;
+      // Fade out in last 40% of duration
+      const fadeAlpha = progress > 0.6 ? (1 - progress) / 0.4 : 1;
+
+      const x = immunePiece.x * squareSize;
+      const y = immunePiece.y * squareSize;
+      const size = squareSize;
+      const cornerRadius = size * 0.25;
+
+      ctx.save();
+      ctx.globalAlpha = fadeAlpha * pulse;
+
+      // Squircle outline
+      const glowColor = immuneTeam === selfId ? "100, 200, 255" : "200, 200, 100";
+      ctx.strokeStyle = `rgba(${glowColor}, ${0.6 * fadeAlpha * pulse})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(x + cornerRadius, y);
+      ctx.lineTo(x + size - cornerRadius, y);
+      ctx.quadraticCurveTo(x + size, y, x + size, y + cornerRadius);
+      ctx.lineTo(x + size, y + size - cornerRadius);
+      ctx.quadraticCurveTo(x + size, y + size, x + size - cornerRadius, y + size);
+      ctx.lineTo(x + cornerRadius, y + size);
+      ctx.quadraticCurveTo(x, y + size, x, y + size - cornerRadius);
+      ctx.lineTo(x, y + cornerRadius);
+      ctx.quadraticCurveTo(x, y, x + cornerRadius, y);
+      ctx.closePath();
+      ctx.stroke();
+
+      // Inner glow
+      const glowGrad = ctx.createRadialGradient(
+        x + size / 2, y + size / 2, size * 0.2,
+        x + size / 2, y + size / 2, size * 0.6
+      );
+      glowGrad.addColorStop(0, `rgba(${glowColor}, ${0.15 * fadeAlpha * pulse})`);
+      glowGrad.addColorStop(1, `rgba(${glowColor}, 0)`);
+      ctx.fillStyle = glowGrad;
+      ctx.fillRect(x, y, size, size);
+
+      ctx.restore();
+      changed = true;
+    }
+
+    for (const id of expiredImmunities) {
+      window.spawnImmunities.delete(id);
+    }
+  }
+
   // Draw nameplates above player-owned pieces (one per team)
   if (window.playerNamesMap) {
     const seenTeams = new Set();
@@ -697,10 +833,9 @@ function render() {
       changed = true; // Keep rendering during cooldown
       const percent = cooldownRemaining / cooldownTotal;
 
-      // Find player's piece (any piece owned by us)
-      const pieces = window.spatialHash.getAllPieces();
+      // Find player's piece from already-queried visible pieces
       let myPiece = null;
-      for (const piece of pieces) {
+      for (const piece of visiblePieces) {
         if (piece.team === selfId) {
           myPiece = piece;
           break;
@@ -781,6 +916,62 @@ function render() {
     }
   }
 
+  // Render capture effects (expanding ring + particle burst)
+  if (captureEffects.size > 0) {
+    const now = performance.now();
+    const expiredEffects = [];
+
+    for (const [key, effect] of captureEffects) {
+      const elapsed = now - effect.startTime;
+      if (elapsed > CAPTURE_EFFECT_DURATION) {
+        expiredEffects.push(key);
+        continue;
+      }
+
+      const [ex, ey] = key.split(",").map(Number);
+      const progress = elapsed / CAPTURE_EFFECT_DURATION;
+      const easeOut = 1 - Math.pow(1 - progress, 3);
+      const alpha = 1 - progress;
+
+      const centerX = ex * squareSize + squareSize / 2;
+      const centerY = ey * squareSize + squareSize / 2;
+      const c = effect.color;
+
+      // Expanding ring
+      ctx.save();
+      ctx.strokeStyle = `rgba(${c.r}, ${c.g}, ${c.b}, ${alpha * 0.8})`;
+      ctx.lineWidth = Math.max(1, (1 - easeOut) * 6);
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, squareSize * 0.3 + easeOut * squareSize * 0.6, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Inner flash
+      if (progress < 0.3) {
+        const flashAlpha = (1 - progress / 0.3) * 0.4;
+        ctx.fillStyle = `rgba(${c.r}, ${c.g}, ${c.b}, ${flashAlpha})`;
+        ctx.fillRect(ex * squareSize, ey * squareSize, squareSize, squareSize);
+      }
+
+      // Particle burst (8 particles flying outward)
+      for (let i = 0; i < 8; i++) {
+        const angle = (i / 8) * Math.PI * 2 + effect.startTime * 0.001;
+        const dist = easeOut * squareSize * 0.8;
+        const px = centerX + Math.cos(angle) * dist;
+        const py = centerY + Math.sin(angle) * dist;
+        const size = (1 - easeOut) * 4 + 1;
+
+        ctx.fillStyle = `rgba(${c.r}, ${c.g}, ${c.b}, ${alpha * 0.9})`;
+        ctx.fillRect(px - size / 2, py - size / 2, size, size);
+      }
+
+      ctx.restore();
+    }
+
+    for (const key of expiredEffects) {
+      captureEffects.delete(key);
+    }
+  }
+
   ctx.setTransform(t);
 
   // Minimap (simplified for infinite world)
@@ -788,32 +979,74 @@ function render() {
 
   // Game over screen
   if (gameOver === true) {
-    gameOverAlpha = interpolate(gameOverAlpha, 1, (dt / 16.66) * 0.1);
+    gameOverAlpha = interpolate(gameOverAlpha, 1, (dt / 16.66) * 0.08);
     changed = true;
 
-    const y = (Math.sin(time / 320) * canvas.h) / 16;
+    // Dark overlay
+    ctx.fillStyle = `rgba(0, 0, 0, ${gameOverAlpha * 0.65})`;
+    ctx.fillRect(0, 0, canvas.w, canvas.h);
 
-    ctx.font = "700 62px monospace";
-    ctx.lineWidth = 5;
-    ctx.fillStyle = "white";
-    ctx.strokeStyle = "black";
+    // Red vignette
+    const vigGrad = ctx.createRadialGradient(
+      canvas.w / 2, canvas.h / 2, canvas.w * 0.2,
+      canvas.w / 2, canvas.h / 2, canvas.w * 0.7,
+    );
+    vigGrad.addColorStop(0, "rgba(180, 0, 0, 0)");
+    vigGrad.addColorStop(1, `rgba(120, 0, 0, ${gameOverAlpha * 0.3})`);
+    ctx.fillStyle = vigGrad;
+    ctx.fillRect(0, 0, canvas.w, canvas.h);
+
+    const centerX = canvas.w / 2;
+    const centerY = canvas.h / 2;
+    const bob = Math.sin(time / 400) * 4;
+
+    // "ELIMINATED" title
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.strokeText("Game Over!", canvas.w / 2, canvas.h / 2 + y - 36);
-    ctx.fillText("Game Over!", canvas.w / 2, canvas.h / 2 + y - 36);
+    ctx.globalAlpha = gameOverAlpha;
 
-    ctx.font = "700 31px monospace";
+    ctx.font = "700 52px 'Sometype Mono', monospace";
+    ctx.fillStyle = "#ff4444";
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.8)";
+    ctx.lineWidth = 6;
+    ctx.strokeText("ELIMINATED", centerX, centerY + bob - 50);
+    ctx.fillText("ELIMINATED", centerX, centerY + bob - 50);
+
+    // Killer info
+    const killer = window.gameOverKiller || "Unknown";
+    ctx.font = "500 20px 'Sometype Mono', monospace";
+    ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
     ctx.lineWidth = 3;
+    ctx.strokeText(`killed by ${killer}`, centerX, centerY + bob - 15);
+    ctx.fillText(`killed by ${killer}`, centerX, centerY + bob - 15);
 
-    const t = (Math.max(0, gameOverTime + respawnTime - time) / 1000).toFixed(
-      1,
-    );
+    // Respawn countdown
+    const remaining = Math.max(0, gameOverTime + respawnTime - time);
+    const progress = 1 - remaining / respawnTime;
+    const seconds = (remaining / 1000).toFixed(1);
 
-    ctx.strokeText(`You Will Respawn in`, canvas.w / 2, canvas.h / 2 + y + 7);
-    ctx.fillText(`You Will Respawn in`, canvas.w / 2, canvas.h / 2 + y + 7);
+    // Countdown bar background
+    const barW = 260;
+    const barH = 8;
+    const barX = centerX - barW / 2;
+    const barY = centerY + bob + 25;
 
-    ctx.strokeText(`${t} seconds.`, canvas.w / 2, canvas.h / 2 + y + 36);
-    ctx.fillText(`${t} seconds.`, canvas.w / 2, canvas.h / 2 + y + 36);
+    ctx.fillStyle = "rgba(255, 255, 255, 0.1)";
+    ctx.fillRect(barX, barY, barW, barH);
+
+    // Countdown bar fill
+    ctx.fillStyle = `rgba(255, 68, 68, ${0.5 + progress * 0.5})`;
+    ctx.fillRect(barX, barY, barW * progress, barH);
+
+    // Respawn text
+    ctx.font = "500 16px 'Sometype Mono', monospace";
+    ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.6)";
+    ctx.lineWidth = 2;
+    ctx.strokeText(`respawning in ${seconds}s`, centerX, centerY + bob + 52);
+    ctx.fillText(`respawning in ${seconds}s`, centerX, centerY + bob + 52);
+
+    ctx.globalAlpha = 1;
   }
 
   changed = false;
@@ -832,14 +1065,13 @@ function render() {
       ? "INFINITE"
       : "64x64";
 
-    // Find player's piece position (any piece owned by us)
-    if (window.spatialHash) {
-      const pieces = window.spatialHash.getAllPieces();
+    // Find player's piece position from visible pieces (already queried)
+    if (visiblePieces.length > 0) {
       let myX = null;
       let myY = null;
       let myPieceCount = 0;
 
-      for (const piece of pieces) {
+      for (const piece of visiblePieces) {
         if (piece.team === selfId) {
           myPieceCount++;
           if (myX === null) {

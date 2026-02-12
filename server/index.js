@@ -87,6 +87,9 @@ console.log(
 // Player metadata store (name, color, etc.)
 const playerMetadata = new Map(); // playerId -> {name, color, kingX, kingY}
 
+// Spawn immunity tracking: playerId -> expiry timestamp
+const spawnImmunity = new Map();
+
 let leaderboard = new Map();
 
 function sendLeaderboard() {
@@ -262,8 +265,8 @@ function broadcastToAll(message) {
   app.publish("global", message, true, false);
 }
 
-// Find spawn location with king safety buffer
-function findSpawnLocation() {
+// Find spawn location with king safety buffer and legal move check
+function findSpawnLocation(pieceType = 6) {
   const KING_BUFFER = 4; // Kings can't spawn within 4 squares of each other
 
   // Define spawn boundaries based on game mode
@@ -283,7 +286,7 @@ function findSpawnLocation() {
     maxY = 63;
   }
 
-  for (let tries = 0; tries < 100; tries++) {
+  for (let tries = 0; tries < 200; tries++) {
     let x, y;
     if (GAME_CONFIG.infiniteMode) {
       const angle = Math.random() * Math.PI * 2;
@@ -299,7 +302,7 @@ function findSpawnLocation() {
     // Check if empty
     if (spatialHash.has(x, y)) continue;
 
-    // Check for nearby kings
+    // Check for nearby kings/player pieces
     let tooClose = false;
     const nearbyPieces = spatialHash.queryRect(
       x - KING_BUFFER,
@@ -309,13 +312,23 @@ function findSpawnLocation() {
     );
 
     for (const piece of nearbyPieces) {
-      if (piece.type === 6) {
+      if (piece.type === 6 || (piece.team > 0 && piece.team < AI_ID_MIN)) {
         tooClose = true;
         break;
       }
     }
 
-    if (!tooClose) return { x, y };
+    if (tooClose) continue;
+
+    // Verify the piece has at least 1 legal move from this position
+    // Temporarily place the piece to check moves, then remove it
+    spatialHash.set(x, y, pieceType, 99999); // Temp team
+    const moves = generateLegalMoves(x, y, spatialHash, 99999, 0);
+    spatialHash.set(x, y, 0, 0); // Remove temp piece
+
+    if (moves.length === 0) continue;
+
+    return { x, y };
   }
 
   // Fallback: try to find ANY empty spot in 64x64 mode
@@ -507,7 +520,7 @@ function spawnAIPieces() {
   }
 }
 
-// Make AI pieces move intelligently
+// Make AI pieces move intelligently - aware of surroundings, prioritizes captures
 function moveAIPieces() {
   if (!AI_CONFIG.enabled) return;
   if (aiPieces.size === 0) return;
@@ -540,18 +553,83 @@ function moveAIPieces() {
 
     if (legalMoves.length === 0) continue;
 
-    // Pick a random legal move
-    const targetMove =
-      legalMoves[Math.floor(Math.random() * legalMoves.length)];
-    const [newX, newY] = targetMove;
+    // Categorize moves: captures vs empty squares
+    const captureMoves = [];
+    const emptyMoves = [];
 
-    // Check if target square has a piece
-    const targetPiece = spatialHash.get(newX, newY);
-
-    // AI won't capture any player pieces (team 1-9999)
-    if (targetPiece.type !== 0 && targetPiece.team > 0 && targetPiece.team < AI_ID_MIN) {
-      continue;
+    for (const [mx, my] of legalMoves) {
+      const target = spatialHash.get(mx, my);
+      if (target.type !== 0 && target.team !== aiId) {
+        // Skip immune players
+        if (target.team > 0 && target.team < AI_ID_MIN) {
+          const immuneUntil = spawnImmunity.get(target.team);
+          if (immuneUntil && Date.now() < immuneUntil) {
+            continue;
+          }
+        }
+        // Prioritize player captures highest, then neutral, then other AI
+        let priority = 1;
+        if (target.team > 0 && target.team < AI_ID_MIN) priority = 3; // Player piece - high priority
+        else if (target.team === 0) priority = 2; // Neutral piece
+        captureMoves.push({ x: mx, y: my, priority, pieceType: target.type });
+      } else if (target.type === 0) {
+        emptyMoves.push([mx, my]);
+      }
     }
+
+    let chosenMove = null;
+
+    if (captureMoves.length > 0) {
+      // Sort by priority (highest first), pick best capture
+      captureMoves.sort((a, b) => b.priority - a.priority);
+      // 80% chance to take the best capture, 20% random capture for variety
+      const pick = Math.random() < 0.8 ? captureMoves[0] : captureMoves[Math.floor(Math.random() * captureMoves.length)];
+      chosenMove = [pick.x, pick.y];
+    } else if (emptyMoves.length > 0) {
+      // No captures available - scan nearby for pieces to move toward
+      const SCAN_RADIUS = 10;
+      const nearbyPieces = spatialHash.queryRadius(aiPiece.x, aiPiece.y, SCAN_RADIUS);
+      let bestTarget = null;
+      let bestDist = Infinity;
+
+      for (const nearby of nearbyPieces) {
+        if (nearby.team === aiId) continue; // Skip self
+        if (nearby.type === 0) continue;
+        const dx = nearby.x - aiPiece.x;
+        const dy = nearby.y - aiPiece.y;
+        const dist = dx * dx + dy * dy;
+        // Prefer player pieces, then neutral
+        const bonus = (nearby.team > 0 && nearby.team < AI_ID_MIN) ? -20 : 0;
+        if (dist + bonus < bestDist) {
+          bestDist = dist + bonus;
+          bestTarget = nearby;
+        }
+      }
+
+      if (bestTarget && Math.random() < 0.6) {
+        // Move toward the target - pick the empty move closest to it
+        let closestMove = null;
+        let closestDist = Infinity;
+        for (const [mx, my] of emptyMoves) {
+          const dx = mx - bestTarget.x;
+          const dy = my - bestTarget.y;
+          const dist = dx * dx + dy * dy;
+          if (dist < closestDist) {
+            closestDist = dist;
+            closestMove = [mx, my];
+          }
+        }
+        chosenMove = closestMove || emptyMoves[Math.floor(Math.random() * emptyMoves.length)];
+      } else {
+        // Random move
+        chosenMove = emptyMoves[Math.floor(Math.random() * emptyMoves.length)];
+      }
+    }
+
+    if (!chosenMove) continue;
+
+    const [newX, newY] = chosenMove;
+    const targetPiece = spatialHash.get(newX, newY);
 
     // If capturing another AI piece, remove it from tracking
     if (targetPiece.team !== 0 && targetPiece.team >= AI_ID_MIN) {
@@ -923,9 +1001,17 @@ global.app = uWS
           console.log(`[Spawn] Player ${ws.id} (${meta.name}) ready to spawn`);
 
           // Spawn player's selected piece
-          const spawn = findSpawnLocation();
           const pieceType = meta.pieceType || 6; // Default to king if not set
+          const spawn = findSpawnLocation(pieceType);
           setSquare(spawn.x, spawn.y, pieceType, ws.id);
+
+          // Grant spawn immunity and broadcast to all clients
+          spawnImmunity.set(ws.id, Date.now() + SPAWN_IMMUNITY_MS);
+          const immuneBuf = new Uint16Array(3);
+          immuneBuf[0] = 55556; // Magic number for spawn immunity
+          immuneBuf[1] = ws.id;
+          immuneBuf[2] = Math.floor(SPAWN_IMMUNITY_MS / 100); // Duration in 100ms units
+          broadcastToAll(immuneBuf);
 
           // Update metadata with king position
           meta.kingX = spawn.x;
@@ -935,7 +1021,7 @@ global.app = uWS
           ws.dead = false;
 
           console.log(
-            `[Spawn] ✓ Player ${ws.id} (${meta.name}) spawned at ${toChessNotation(spawn.x, spawn.y)}`,
+            `[Spawn] ✓ Player ${ws.id} (${meta.name}) spawned at ${toChessNotation(spawn.x, spawn.y)} (${SPAWN_IMMUNITY_MS / 1000}s immunity)`,
           );
 
           // Send initial viewport (spawn coords are grid coords)
@@ -1005,7 +1091,7 @@ global.app = uWS
       // Move piece
       else if (data.byteLength === 8) {
         const now = Date.now();
-        if (now - ws.lastMovedTime < moveCooldown - 500) return;
+        if (now - ws.lastMovedTime < moveCooldown) return;
 
         const startX = decoded[0];
         const startY = decoded[1];
@@ -1016,6 +1102,11 @@ global.app = uWS
 
         // Validate ownership
         if (startPiece.team !== ws.id) return;
+
+        // Clear spawn immunity on first move
+        if (spawnImmunity.has(ws.id)) {
+          spawnImmunity.delete(ws.id);
+        }
 
         // Validate move legality (range scales with kills)
         const playerKills = leaderboard.get(ws.id) || 0;
@@ -1037,6 +1128,13 @@ global.app = uWS
 
         if (!isLegal) return;
 
+        // Block captures of immune players
+        const targetPiece = spatialHash.get(finX, finY);
+        if (targetPiece.type !== 0 && targetPiece.team < AI_ID_MIN && targetPiece.team > 0) {
+          const immuneUntil = spawnImmunity.get(targetPiece.team);
+          if (immuneUntil && Date.now() < immuneUntil) return;
+        }
+
         move(startX, startY, finX, finY, ws.id);
         ws.lastMovedTime = now;
       }
@@ -1047,6 +1145,7 @@ global.app = uWS
       ws.closed = true;
 
       if (ws.id) teamsToNeutralize.push(ws.id);
+      spawnImmunity.delete(ws.id);
 
       if (leaderboard.has(ws.id)) {
         leaderboard.delete(ws.id);
