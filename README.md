@@ -45,12 +45,36 @@ The original Xess was an excellent proof-of-concept for massively multiplayer ch
 # Install dependencies
 npm install
 
-# Start server
+# Start server (production)
 npm start
+
+# Start with hot reloading (development)
+npm run dev
 
 # Open browser
 open http://localhost:3000
 ```
+
+### Hot Reloading (Development)
+
+The project uses **nodemon** for automatic server restarts during development:
+
+```bash
+npm run dev
+```
+
+**Features:**
+- 🔄 Auto-restarts server when files change
+- 👀 Watches `server/`, `shared/`, `client/` directories
+- 📝 Monitors `.js`, `.json`, `.html`, `.css` files
+- ⚡ 500ms delay after changes before restart
+- 🔌 WebSocket clients auto-reconnect after restart
+
+**Workflow:**
+1. Run `npm run dev` to start with hot reloading
+2. Edit server/shared files → server auto-restarts
+3. Edit client files → refresh browser after restart
+4. See `DEVELOPMENT.md` for detailed guide
 
 ### Development Mode
 

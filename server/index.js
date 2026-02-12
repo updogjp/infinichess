@@ -1,255 +1,354 @@
-import uWS from 'uWebSockets.js';
-import fs from 'fs';
-import '../shared/constants.js';
-import badWords from './badwords.js';
-import { closest } from 'color-2-name';
+import uWS from "uWebSockets.js";
+import fs from "fs/promises";
+import fsSync from "fs";
+import "../shared/constants.js";
+import badWords from "./badwords.js";
 
-import { networkInterfaces } from 'os';
+import { networkInterfaces } from "os";
 
-const captchaSecretKey = "[captcha key]"
-
-function serverIp(){
-    const nets = networkInterfaces();
-    const results = {};
-    
-    for (const name of Object.keys(nets)) {
-        for (const net of nets[name]) {
-            const familyV4Value = typeof net.family === 'string' ? 'IPv4' : 4
-            if (net.family === familyV4Value && !net.internal) {
-                if (!results[name]) {
-                    results[name] = [];
-                }
-                results[name].push(net.address);
-            }
-        }
-    }
-
-    return results;
+// Simple color name generator (replacing heavy color-2-name library)
+const colorNames = [
+  "red",
+  "blue",
+  "green",
+  "yellow",
+  "purple",
+  "orange",
+  "pink",
+  "cyan",
+  "magenta",
+  "lime",
+  "navy",
+  "teal",
+  "maroon",
+  "olive",
+  "aqua",
+  "silver",
+];
+function simpleColorName(num) {
+  const index = Math.abs(num) % colorNames.length;
+  return colorNames[index] + num.toString().slice(-3);
 }
 
-const info = serverIp();
-const isProd = !(Array.isArray(info['Wi-Fi']) && info['Wi-Fi'][0] === 'your local developer ip address');
-console.log({isProd});
+const captchaSecretKey = "[captcha key]";
+
+function serverIp() {
+  const nets = networkInterfaces();
+  const results = {};
+
+  for (const name of Object.keys(nets)) {
+    for (const net of nets[name]) {
+      const familyV4Value = typeof net.family === "string" ? "IPv4" : 4;
+      if (net.family === familyV4Value && !net.internal) {
+        if (!results[name]) {
+          results[name] = [];
+        }
+        results[name].push(net.address);
+      }
+    }
+  }
+
+  return results;
+}
+
+const isDev = process.env.NODE_ENV === "development" || !process.env.NODE_ENV;
+const isProd = !isDev;
+
+// Only log important startup info
+if (isDev) {
+  console.log("🔧 DEV MODE: CAPTCHA BYPASSED");
+}
+
+// Game mode configuration
+const GAME_CONFIG = {
+  infiniteMode: false, // Set to true for infinite world, false for 64x64 board
+};
+
+// Piece spawner configuration
+const AI_CONFIG = {
+  enabled: true, // Set to false to disable AI players
+  piecesPerPlayer: 8, // AI pieces to spawn per online player (e.g., 3 players = 24 AI pieces)
+  spawnRadius: 2000, // Spawn AI within this distance of online players
+  moveInterval: 3000, // AI makes moves every 3 seconds
+  moveChance: 0.3, // 30% chance an AI piece moves each interval
+};
 
 // Initialize spatial hash for infinite world
 const spatialHash = new SpatialHash();
 global.spatialHash = spatialHash;
+
+// Set game mode
+global.infiniteMode = GAME_CONFIG.infiniteMode;
+console.log(
+  `[GAME] Mode: ${GAME_CONFIG.infiniteMode ? "INFINITE" : "64x64 BOARD"}`,
+);
 
 // Player metadata store (name, color, etc.)
 const playerMetadata = new Map(); // playerId -> {name, color, kingX, kingY}
 
 let leaderboard = new Map();
 
-function sendLeaderboard(){
-    const leaderboardData = [];
-    let bufLen = 1;
-    
-    for(const [playerId, kills] of leaderboard){
-        const metadata = playerMetadata.get(playerId);
-        const name = metadata ? metadata.name : teamToName(playerId);
-        const nameLen = name.length;
-        
-        leaderboardData.push({ id: playerId, kills, name, nameLen });
-        let add = nameLen;
-        if(add % 2 === 1) add++;
-        bufLen += add + 6;
-    }
-    
-    if(bufLen % 2 === 1) bufLen++;
-    
-    const buf = new Uint8Array(bufLen);
-    const u16 = new Uint16Array(buf.buffer);
-    u16[0] = 48027;
+function sendLeaderboard() {
+  const leaderboardData = [];
+  let bufLen = 2; // Start at 2 to include magic number + online count
 
-    let i = 1;
-    for(const d of leaderboardData){
-        u16[i++] = d.id;
-        u16[i++] = d.kills;
-        u16[i++] = d.nameLen;
-        encodeAtPosition(d.name, buf, i * 2);
-        i += Math.ceil(d.nameLen / 2);
-    }
+  for (const [playerId, kills] of leaderboard) {
+    const metadata = playerMetadata.get(playerId);
+    const name = metadata ? metadata.name : teamToName(playerId);
+    const nameLen = name.length;
 
-    return buf;
+    leaderboardData.push({ id: playerId, kills, name, nameLen });
+    let add = nameLen;
+    if (add % 2 === 1) add++;
+    bufLen += add + 6;
+  }
+
+  if (bufLen % 2 === 1) bufLen++;
+
+  const buf = new Uint8Array(bufLen);
+  const u16 = new Uint16Array(buf.buffer);
+  u16[0] = 48027;
+  u16[1] = Object.keys(clients).length; // Online player count
+
+  let i = 2;
+  for (const d of leaderboardData) {
+    u16[i++] = d.id;
+    u16[i++] = d.kills;
+    u16[i++] = d.nameLen;
+    encodeAtPosition(d.name, buf, i * 2);
+    i += Math.ceil(d.nameLen / 2);
+  }
+
+  return buf;
 }
 
 // Seeded RNG for team colors
-function teamToColor(team){
-    let num = Math.round((Math.sin(team * 10000) + 1) / 2 * 0xFFFFFF);
-    let r = (num & 0xFF0000) >>> 16;
-    let g = (num & 0x00FF00) >>> 8;
-    let b = (num & 0x0000FF);
+function teamToColor(team) {
+  let num = Math.round(((Math.sin(team * 10000) + 1) / 2) * 0xffffff);
+  let r = (num & 0xff0000) >>> 16;
+  let g = (num & 0x00ff00) >>> 8;
+  let b = num & 0x0000ff;
 
-    if(r + g + b > 520){
-        r /= 2;
-        g /= 2;
-        b /= 2;
-    }
+  if (r + g + b > 520) {
+    r /= 2;
+    g /= 2;
+    b /= 2;
+  }
 
-    return {r, g, b};
+  return { r, g, b };
 }
 
-function teamToName(team){
-    const color = teamToColor(team);
-    return closest(`rgb(${color.r}, ${color.g}, ${color.b})`).name;
+function teamToName(team) {
+  return simpleColorName(team);
 }
 
 // Set square and broadcast to relevant players only
-function setSquare(x, y, piece, team){
-    spatialHash.set(x, y, piece, team);
+function setSquare(x, y, piece, team) {
+  spatialHash.set(x, y, piece, team);
 
-    // Broadcast to players whose viewport contains this square
-    const buf = new Uint16Array(5);
-    buf[0] = 55555; // Magic number for setSquare
-    buf[1] = x;
-    buf[2] = y;
-    buf[3] = piece;
-    buf[4] = team;
-    
-    broadcastToViewport(x, y, buf);
+  // Broadcast to players whose viewport contains this square
+  const buf = new Uint16Array(5);
+  buf[0] = 55555; // Magic number for setSquare
+  buf[1] = x;
+  buf[2] = y;
+  buf[3] = piece;
+  buf[4] = team;
+
+  broadcastToViewport(x, y, buf);
 }
 
 // Move piece with all game logic
-function move(startX, startY, finX, finY, playerId){
-    const startPiece = spatialHash.get(startX, startY);
-    const endPiece = spatialHash.get(finX, finY);
-    
-    // Perform the move
-    spatialHash.set(finX, finY, startPiece.type, playerId);
-    spatialHash.set(startX, startY, 0, 0);
+function move(startX, startY, finX, finY, playerId) {
+  const startPiece = spatialHash.get(startX, startY);
+  const endPiece = spatialHash.get(finX, finY);
 
-    // Broadcast move
-    const buf = new Uint16Array(6);
-    buf[0] = 55554; // Magic number for move
-    buf[1] = startX;
-    buf[2] = startY;
-    buf[3] = finX;
-    buf[4] = finY;
-    buf[5] = playerId;
-    
-    // Broadcast to both source and destination viewports
-    broadcastToViewport(startX, startY, buf);
-    if(Math.abs(finX - startX) > 1000 || Math.abs(finY - startY) > 1000) {
-        broadcastToViewport(finX, finY, buf);
-    }
+  // Perform the move
+  spatialHash.set(finX, finY, startPiece.type, playerId);
+  spatialHash.set(startX, startY, 0, 0);
 
-    // Capture logic: captured neutral pieces become yours
-    if(endPiece.type !== 0 && endPiece.team === 0){
-        setSquare(startX, startY, endPiece.type, playerId);
-    }
+  // Broadcast move
+  const buf = new Uint16Array(6);
+  buf[0] = 55554; // Magic number for move
+  buf[1] = startX;
+  buf[2] = startY;
+  buf[3] = finX;
+  buf[4] = finY;
+  buf[5] = playerId;
 
-    // King capture: eliminate player
-    if(endPiece.type === 6 && endPiece.team !== 0 && clients[endPiece.team] !== undefined){
-        const victimId = endPiece.team;
-        clients[victimId].dead = true;
-        clients[victimId].respawnTime = Date.now() + global.respawnTime - 500;
-        teamsToNeutralize.push(victimId);
+  // Broadcast to both source and destination viewports
+  broadcastToViewport(startX, startY, buf);
+  if (Math.abs(finX - startX) > 1000 || Math.abs(finY - startY) > 1000) {
+    broadcastToViewport(finX, finY, buf);
+  }
 
-        // Update leaderboard
-        const currentKills = leaderboard.get(playerId) || 0;
-        leaderboard.set(playerId, currentKills + 1);
-        leaderboard.set(victimId, 0);
-        
-        broadcastToAll(sendLeaderboard());
-    }
+  // Capture logic: captured neutral pieces become yours
+  if (endPiece.type !== 0 && endPiece.team === 0) {
+    setSquare(startX, startY, endPiece.type, playerId);
+  }
+
+  // King capture: eliminate player
+  if (
+    endPiece.type === 6 &&
+    endPiece.team !== 0 &&
+    clients[endPiece.team] !== undefined
+  ) {
+    const victimId = endPiece.team;
+    clients[victimId].dead = true;
+    clients[victimId].respawnTime = Date.now() + global.respawnTime - 500;
+    teamsToNeutralize.push(victimId);
+
+    // Update leaderboard
+    const currentKills = leaderboard.get(playerId) || 0;
+    leaderboard.set(playerId, currentKills + 1);
+    leaderboard.set(victimId, 0);
+
+    broadcastToAll(sendLeaderboard());
+  }
 }
 
 // Broadcast to players whose viewport contains a point
-function broadcastToViewport(x, y, message){
-    const VIEWPORT_RADIUS = 3000; // pixels (in world coordinates)
-    
-    for(const client of Object.values(clients)){
-        if(!client.camera || !client.verified) continue;
-        
-        const dx = x - client.camera.x;
-        const dy = y - client.camera.y;
-        const dist = Math.sqrt(dx*dx + dy*dy);
-        
-        // Scale radius by zoom level
-        const effectiveRadius = VIEWPORT_RADIUS / (client.camera.scale || 1);
-        
-        if(dist < effectiveRadius){
-            send(client, message);
-        }
+function broadcastToViewport(x, y, message) {
+  const VIEWPORT_RADIUS = 3000; // pixels (in world coordinates)
+
+  for (const client of Object.values(clients)) {
+    if (!client.camera || !client.verified) continue;
+
+    const dx = x - client.camera.x;
+    const dy = y - client.camera.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    // Scale radius by zoom level
+    const effectiveRadius = VIEWPORT_RADIUS / (client.camera.scale || 1);
+
+    if (dist < effectiveRadius) {
+      send(client, message);
     }
+  }
 }
 
 // Broadcast to all connected clients
-function broadcastToAll(message){
-    app.publish('global', message, true, false);
+function broadcastToAll(message) {
+  app.publish("global", message, true, false);
 }
 
 // Find spawn location with king safety buffer
-function findSpawnLocation(){
-    const SPAWN_RADIUS = 50000; // Search within this radius from origin
-    const KING_BUFFER = 4; // Kings can't spawn within 4 squares of each other
-    
-    for(let tries = 0; tries < 100; tries++){
-        const angle = Math.random() * Math.PI * 2;
-        const dist = Math.random() * SPAWN_RADIUS;
-        const x = Math.floor(Math.cos(angle) * dist);
-        const y = Math.floor(Math.sin(angle) * dist);
-        
-        // Check if empty
-        if(spatialHash.has(x, y)) continue;
-        
-        // Check for nearby kings
-        let tooClose = false;
-        const nearbyPieces = spatialHash.queryRect(x - KING_BUFFER, y - KING_BUFFER, x + KING_BUFFER, y + KING_BUFFER);
-        
-        for(const piece of nearbyPieces){
-            if(piece.type === 6){
-                tooClose = true;
-                break;
-            }
-        }
-        
-        if(!tooClose) return {x, y};
+function findSpawnLocation() {
+  const KING_BUFFER = 4; // Kings can't spawn within 4 squares of each other
+
+  // Define spawn boundaries based on game mode
+  let minX, maxX, minY, maxY;
+  if (GAME_CONFIG.infiniteMode) {
+    // Infinite mode: spawn within 50000 units from origin
+    const SPAWN_RADIUS = 50000;
+    minX = -SPAWN_RADIUS;
+    maxX = SPAWN_RADIUS;
+    minY = -SPAWN_RADIUS;
+    maxY = SPAWN_RADIUS;
+  } else {
+    // 64x64 mode: spawn within board boundaries
+    minX = 0;
+    maxX = 63;
+    minY = 0;
+    maxY = 63;
+  }
+
+  for (let tries = 0; tries < 100; tries++) {
+    let x, y;
+    if (GAME_CONFIG.infiniteMode) {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = (Math.random() * (maxX - minX)) / 2;
+      x = Math.floor(Math.cos(angle) * dist);
+      y = Math.floor(Math.sin(angle) * dist);
+    } else {
+      // Random location within 64x64 board
+      x = Math.floor(Math.random() * (maxX - minX + 1) + minX);
+      y = Math.floor(Math.random() * (maxY - minY + 1) + minY);
     }
-    
-    // Fallback: random location (might be occupied, but we'll handle that)
+
+    // Check if empty
+    if (spatialHash.has(x, y)) continue;
+
+    // Check for nearby kings
+    let tooClose = false;
+    const nearbyPieces = spatialHash.queryRect(
+      x - KING_BUFFER,
+      y - KING_BUFFER,
+      x + KING_BUFFER,
+      y + KING_BUFFER,
+    );
+
+    for (const piece of nearbyPieces) {
+      if (piece.type === 6) {
+        tooClose = true;
+        break;
+      }
+    }
+
+    if (!tooClose) return { x, y };
+  }
+
+  // Fallback: try to find ANY empty spot in 64x64 mode
+  if (!GAME_CONFIG.infiniteMode) {
+    for (let x = 0; x < 64; x++) {
+      for (let y = 0; y < 64; y++) {
+        if (!spatialHash.has(x, y)) {
+          return { x, y };
+        }
+      }
+    }
+  }
+
+  // Fallback: random location (might be occupied, but we'll handle that)
+  let x, y;
+  if (GAME_CONFIG.infiniteMode) {
     const angle = Math.random() * Math.PI * 2;
-    const dist = Math.random() * SPAWN_RADIUS;
-    return {
-        x: Math.floor(Math.cos(angle) * dist),
-        y: Math.floor(Math.sin(angle) * dist)
-    };
+    const dist = Math.random() * 50000;
+    x = Math.floor(Math.cos(angle) * dist);
+    y = Math.floor(Math.sin(angle) * dist);
+  } else {
+    x = Math.floor(Math.random() * 64);
+    y = Math.floor(Math.random() * 64);
+  }
+  return { x, y };
 }
 
 // Send viewport state to a client
-function sendViewportState(ws, centerX, centerY){
-    const VIEWPORT_RADIUS = 30; // Reduced from 50 for faster initial load
-    
-    const pieces = spatialHash.queryRect(
-        centerX - VIEWPORT_RADIUS,
-        centerY - VIEWPORT_RADIUS,
-        centerX + VIEWPORT_RADIUS,
-        centerY + VIEWPORT_RADIUS
+function sendViewportState(ws, centerX, centerY) {
+  const VIEWPORT_RADIUS = 30; // Reduced from 50 for faster initial load
+
+  const pieces = spatialHash.queryRect(
+    centerX - VIEWPORT_RADIUS,
+    centerY - VIEWPORT_RADIUS,
+    centerX + VIEWPORT_RADIUS,
+    centerY + VIEWPORT_RADIUS,
+  );
+
+  // Limit pieces sent to prevent huge messages
+  const maxPieces = Math.min(pieces.length, 500);
+
+  // Format: [magic, playerId, count, infiniteMode, x, y, type, team, x, y, type, team...]
+  const buf = new Uint16Array(4 + maxPieces * 4);
+  buf[0] = 55553; // Magic number for viewport sync
+  buf[1] = ws.id;
+  buf[2] = maxPieces;
+  buf[3] = GAME_CONFIG.infiniteMode ? 1 : 0; // Game mode flag
+
+  let i = 4;
+  for (let j = 0; j < maxPieces; j++) {
+    const piece = pieces[j];
+    buf[i++] = piece.x;
+    buf[i++] = piece.y;
+    buf[i++] = piece.type;
+    buf[i++] = piece.team;
+  }
+
+  send(ws, buf);
+
+  if (pieces.length > maxPieces) {
+    console.log(
+      `[Viewport] Sent ${maxPieces}/${pieces.length} pieces to player ${ws.id}`,
     );
-    
-    // Limit pieces sent to prevent huge messages
-    const maxPieces = Math.min(pieces.length, 500);
-    
-    // Format: [magic, playerId, count, x, y, type, team, x, y, type, team...]
-    const buf = new Uint16Array(3 + maxPieces * 4);
-    buf[0] = 55553; // Magic number for viewport sync
-    buf[1] = ws.id;
-    buf[2] = maxPieces;
-    
-    let i = 3;
-    for(let j = 0; j < maxPieces; j++){
-        const piece = pieces[j];
-        buf[i++] = piece.x;
-        buf[i++] = piece.y;
-        buf[i++] = piece.type;
-        buf[i++] = piece.team;
-    }
-    
-    send(ws, buf);
-    
-    if(pieces.length > maxPieces){
-        console.log(`[Viewport] Sent ${maxPieces}/${pieces.length} pieces to player ${ws.id}`);
-    }
+  }
 }
 
 const PORT = 3000;
@@ -257,611 +356,805 @@ global.clients = {};
 let connectedIps = {};
 let id = 1;
 
-function generateId(){
-    if(id >= 65532) id = 1;
-    return id++;
+function generateId() {
+  if (id >= 65532) id = 1;
+  return id++;
 }
 
 const decoder = new TextDecoder();
-function decodeText(u8array, startPos=0, endPos=Infinity){
-    return decoder.decode(u8array).slice(startPos, endPos);
+function decodeText(u8array, startPos = 0, endPos = Infinity) {
+  return decoder.decode(u8array).slice(startPos, endPos);
 }
 
-// Piece spawner using procedural generation
-setInterval(() => {
-    const pieceCount = spatialHash.count();
-    const targetPieces = 5000; // Target number of neutral pieces
-    
-    if(pieceCount >= targetPieces) return;
-    
-    // Spawn a few pieces
-    for(let i = 0; i < 5; i++){
-        const angle = Math.random() * Math.PI * 2;
-        const dist = Math.random() * 50000;
-        const x = Math.floor(Math.cos(angle) * dist);
-        const y = Math.floor(Math.sin(angle) * dist);
-        
-        // Use procedural generation
-        const pieceType = getProceduralPiece(x, y);
-        if(pieceType !== 0 && !spatialHash.has(x, y)){
-            setSquare(x, y, pieceType, 0);
-        }
+// AI player system - spawns intelligent pieces near online players
+const aiPieces = new Map(); // aiPieceId -> {x, y, type, lastMove}
+let nextAiId = 100000; // AI IDs start at 100000 to avoid collision
+
+// Spawn AI pieces near online players
+function spawnAIPieces() {
+  if (!AI_CONFIG.enabled) return;
+
+  // Disable AI in 64x64 mode
+  if (!GAME_CONFIG.infiniteMode) return;
+
+  const players = Object.values(clients);
+  if (players.length === 0) return;
+
+  const targetAIPieces = players.length * AI_CONFIG.piecesPerPlayer;
+  const currentAIPieces = aiPieces.size;
+
+  // Spawn more AI if below target
+  if (currentAIPieces < targetAIPieces) {
+    const toSpawn = Math.min(3, targetAIPieces - currentAIPieces);
+
+    for (let i = 0; i < toSpawn; i++) {
+      // Pick a random online player to spawn near
+      const player = players[Math.floor(Math.random() * players.length)];
+      const meta = playerMetadata.get(player.id);
+      if (!meta || meta.kingX === undefined) continue;
+
+      // Spawn within radius of player
+      const angle = Math.random() * Math.PI * 2;
+      const dist = Math.random() * AI_CONFIG.spawnRadius;
+      let x = Math.floor(meta.kingX + (Math.cos(angle) * dist) / 150);
+      let y = Math.floor(meta.kingY + (Math.sin(angle) * dist) / 150);
+
+      // Clamp to board boundaries in 64x64 mode
+      if (!GAME_CONFIG.infiniteMode) {
+        x = Math.max(0, Math.min(63, x));
+        y = Math.max(0, Math.min(63, y));
+      }
+
+      // Check if square is empty
+      const existing = spatialHash.get(x, y);
+      if (existing.type !== 0) continue;
+
+      // Random piece type (1=pawn, 2=knight, 3=bishop, 4=rook, 5=queen)
+      const pieceType = Math.floor(Math.random() * 5) + 1;
+      const aiId = nextAiId++;
+
+      // Set piece on board
+      setSquare(x, y, pieceType, aiId);
+
+      // Track AI piece
+      aiPieces.set(aiId, {
+        x,
+        y,
+        type: pieceType,
+        lastMove: Date.now(),
+      });
     }
-}, 100);
+  }
+
+  // Remove AI pieces that are too far from all players
+  for (const [aiId, aiPiece] of aiPieces) {
+    let nearPlayer = false;
+    for (const player of players) {
+      const meta = playerMetadata.get(player.id);
+      if (!meta) continue;
+
+      const dx = (aiPiece.x - meta.kingX) * 150;
+      const dy = (aiPiece.y - meta.kingY) * 150;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (dist < AI_CONFIG.spawnRadius * 2) {
+        nearPlayer = true;
+        break;
+      }
+    }
+
+    if (!nearPlayer) {
+      // Remove AI piece that wandered too far
+      setSquare(aiPiece.x, aiPiece.y, 0, 0);
+      aiPieces.delete(aiId);
+    }
+  }
+}
+
+// Make AI pieces move intelligently
+function moveAIPieces() {
+  if (!AI_CONFIG.enabled) return;
+  if (aiPieces.size === 0) return;
+
+  for (const [aiId, aiPiece] of aiPieces) {
+    // Random chance to move
+    if (Math.random() > AI_CONFIG.moveChance) continue;
+
+    // Don't move too frequently
+    if (Date.now() - aiPiece.lastMove < AI_CONFIG.moveInterval) continue;
+
+    // Generate legal moves
+    const legalMoves = generateLegalMoves(
+      aiPiece.x,
+      aiPiece.y,
+      spatialHash,
+      aiId,
+    );
+
+    if (legalMoves.length === 0) continue;
+
+    // Pick a random legal move
+    const targetMove =
+      legalMoves[Math.floor(Math.random() * legalMoves.length)];
+    const [newX, newY] = targetMove;
+
+    // Check if target square has a piece
+    const targetPiece = spatialHash.get(newX, newY);
+
+    // AI won't capture player kings, only other pieces
+    if (targetPiece.type === 6 && clients[targetPiece.team]) {
+      continue;
+    }
+
+    // If capturing another AI piece, remove it from tracking
+    if (targetPiece.team !== 0 && targetPiece.team >= 100000) {
+      aiPieces.delete(targetPiece.team);
+    }
+
+    // Execute move
+    move(aiId, aiPiece.x, aiPiece.y, newX, newY);
+
+    // Update AI piece position
+    aiPiece.x = newX;
+    aiPiece.y = newY;
+    aiPiece.lastMove = Date.now();
+  }
+}
+
+// Run AI systems only if enabled and in infinite mode
+if (AI_CONFIG.enabled && GAME_CONFIG.infiniteMode) {
+  setInterval(spawnAIPieces, 2000);
+  setInterval(moveAIPieces, 1000);
+  console.log(
+    `[AI] System enabled - ${AI_CONFIG.piecesPerPlayer} pieces per player`,
+  );
+} else {
+  console.log(`[AI] System disabled`);
+}
 
 let teamsToNeutralize = [];
 
 // Neutralize disconnected players' pieces
 setInterval(() => {
-    if(teamsToNeutralize.length === 0) return;
-    
-    const teamsToRemove = [...teamsToNeutralize];
-    teamsToNeutralize = [];
-    
-    // Find and neutralize all pieces belonging to disconnected teams
-    const allPieces = spatialHash.getAllPieces();
-    
-    for(const piece of allPieces){
-        if(teamsToRemove.includes(piece.team)){
-            if(piece.type === 6){
-                // Remove king entirely
-                spatialHash.set(piece.x, piece.y, 0, 0);
-                setSquare(piece.x, piece.y, 0, 0);
-            } else {
-                // Neutralize other pieces
-                spatialHash.set(piece.x, piece.y, piece.type, 0);
-                setSquare(piece.x, piece.y, piece.type, 0);
-            }
-        }
+  if (teamsToNeutralize.length === 0) return;
+
+  const teamsToRemove = [...teamsToNeutralize];
+  teamsToNeutralize = [];
+
+  // Find and neutralize all pieces belonging to disconnected teams
+  const allPieces = spatialHash.getAllPieces();
+
+  for (const piece of allPieces) {
+    if (teamsToRemove.includes(piece.team)) {
+      if (piece.type === 6) {
+        // Remove king entirely
+        spatialHash.set(piece.x, piece.y, 0, 0);
+        setSquare(piece.x, piece.y, 0, 0);
+      } else {
+        // Neutralize other pieces
+        spatialHash.set(piece.x, piece.y, piece.type, 0);
+        setSquare(piece.x, piece.y, piece.type, 0);
+      }
     }
-    
-    // Broadcast neutralization
-    const buf = new Uint16Array(2 + teamsToRemove.length);
-    buf[0] = 64535;
-    buf[1] = 12345;
-    for(let i = 0; i < teamsToRemove.length; i++){
-        buf[i + 2] = teamsToRemove[i];
-    }
-    broadcastToAll(buf);
+  }
+
+  // Broadcast neutralization
+  const buf = new Uint16Array(2 + teamsToRemove.length);
+  buf[0] = 64535;
+  buf[1] = 12345;
+  for (let i = 0; i < teamsToRemove.length; i++) {
+    buf[i + 2] = teamsToRemove[i];
+  }
+  broadcastToAll(buf);
 }, 440);
 
 // Cleanup captcha keys
 let usedCaptchaKeys = {};
-setInterval(() => {
+setInterval(
+  () => {
     const now = Date.now();
-    for(const key in usedCaptchaKeys){
-        if(now - usedCaptchaKeys[key] > 2 * 60 * 1000){
-            delete usedCaptchaKeys[key];
-        }
+    for (const key in usedCaptchaKeys) {
+      if (now - usedCaptchaKeys[key] > 2 * 60 * 1000) {
+        delete usedCaptchaKeys[key];
+      }
     }
-}, 2 * 60 * 1000);
+  },
+  2 * 60 * 1000,
+);
 
 // World Persistence - Save/Load
-const WORLD_SAVE_PATH = 'server/world.dat';
-const PLAYER_SAVE_PATH = 'server/players.dat';
+const WORLD_SAVE_PATH = "server/world.dat";
+const PLAYER_SAVE_PATH = "server/players.dat";
 
-function saveWorld(){
-    try {
-        const pieces = spatialHash.getAllPieces();
-        
-        // Filter out player-owned pieces (only save neutral pieces)
-        const neutralPieces = pieces.filter(p => p.team === 0 && p.type !== 0);
-        
-        // Format: [count, x, y, type, x, y, type, ...]
-        const buf = new Int32Array(1 + neutralPieces.length * 3);
-        buf[0] = neutralPieces.length;
-        
-        let i = 1;
-        for(const piece of neutralPieces){
-            buf[i++] = piece.x;
-            buf[i++] = piece.y;
-            buf[i++] = piece.type;
-        }
-        
-        fs.writeFileSync(WORLD_SAVE_PATH, Buffer.from(buf.buffer));
-        console.log(`[Persistence] Saved ${neutralPieces.length} neutral pieces`);
-    } catch(e){
-        console.error('[Persistence] Failed to save world:', e);
+async function saveWorld() {
+  try {
+    const pieces = spatialHash.getAllPieces();
+
+    // Filter out player-owned pieces (only save neutral pieces)
+    const neutralPieces = pieces.filter((p) => p.team === 0 && p.type !== 0);
+
+    // Format: [count, x, y, type, x, y, type, ...]
+    const buf = new Int32Array(1 + neutralPieces.length * 3);
+    buf[0] = neutralPieces.length;
+
+    let i = 1;
+    for (const piece of neutralPieces) {
+      buf[i++] = piece.x;
+      buf[i++] = piece.y;
+      buf[i++] = piece.type;
     }
+
+    await fs.writeFile(WORLD_SAVE_PATH, Buffer.from(buf.buffer));
+  } catch (e) {
+    console.error("[Persistence] Failed to save world:", e);
+  }
 }
 
-function loadWorld(){
-    try {
-        if(!fs.existsSync(WORLD_SAVE_PATH)){
-            console.log('[Persistence] No save file found, starting fresh world');
-            return;
-        }
-        
-        const data = fs.readFileSync(WORLD_SAVE_PATH);
-        const buf = new Int32Array(data.buffer, data.byteOffset, data.byteLength / 4);
-        
-        const count = buf[0];
-        console.log(`[Persistence] Loading ${count} neutral pieces`);
-        
-        let i = 1;
-        for(let j = 0; j < count; j++){
-            const x = buf[i++];
-            const y = buf[i++];
-            const type = buf[i++];
-            
-            spatialHash.set(x, y, type, 0);
-        }
-        
-        console.log('[Persistence] World loaded successfully');
-    } catch(e){
-        console.error('[Persistence] Failed to load world:', e);
+async function loadWorld() {
+  try {
+    if (!fsSync.existsSync(WORLD_SAVE_PATH)) {
+      console.log("[Startup] Starting fresh world");
+      return;
     }
+
+    const data = await fs.readFile(WORLD_SAVE_PATH);
+    const buf = new Int32Array(
+      data.buffer,
+      data.byteOffset,
+      data.byteLength / Int32Array.BYTES_PER_ELEMENT,
+    );
+
+    const count = buf[0];
+
+    let i = 1;
+    for (let j = 0; j < count; j++) {
+      const x = buf[i++];
+      const y = buf[i++];
+      const type = buf[i++];
+      spatialHash.set(x, y, type, 0); // Team 0 = neutral
+    }
+
+    console.log(`[Startup] Loaded ${count} pieces`);
+  } catch (e) {
+    console.error("[Startup] Failed to load world:", e);
+  }
 }
 
-function savePlayerMetadata(){
-    try {
-        const data = [];
-        for(const [playerId, meta] of playerMetadata){
-            data.push({
-                id: playerId,
-                name: meta.name,
-                color: meta.color,
-                kills: leaderboard.get(playerId) || 0
-            });
-        }
-        
-        fs.writeFileSync(PLAYER_SAVE_PATH, JSON.stringify(data));
-        console.log(`[Persistence] Saved ${data.length} player records`);
-    } catch(e){
-        console.error('[Persistence] Failed to save players:', e);
+async function savePlayerMetadata() {
+  try {
+    const data = [];
+    for (const [playerId, meta] of playerMetadata) {
+      data.push({
+        id: playerId,
+        name: meta.name,
+        color: meta.color,
+        kills: leaderboard.get(playerId) || 0,
+      });
     }
+
+    await fs.writeFile(PLAYER_SAVE_PATH, JSON.stringify(data));
+  } catch (e) {
+    console.error("[Persistence] Failed to save players:", e);
+  }
 }
 
-function loadPlayerMetadata(){
-    try {
-        if(!fs.existsSync(PLAYER_SAVE_PATH)){
-            console.log('[Persistence] No player data found');
-            return;
-        }
-        
-        const data = JSON.parse(fs.readFileSync(PLAYER_SAVE_PATH, 'utf8'));
-        
-        for(const record of data){
-            playerMetadata.set(record.id, {
-                name: record.name,
-                color: record.color,
-                kingX: 0,
-                kingY: 0
-            });
-            
-            if(record.kills > 0){
-                leaderboard.set(record.id, record.kills);
-            }
-        }
-        
-        console.log(`[Persistence] Loaded ${data.length} player records`);
-    } catch(e){
-        console.error('[Persistence] Failed to load players:', e);
+async function loadPlayerMetadata() {
+  try {
+    if (!fsSync.existsSync(PLAYER_SAVE_PATH)) {
+      return;
     }
+
+    const fileData = await fs.readFile(PLAYER_SAVE_PATH, "utf8");
+
+    // Handle empty or corrupted file
+    if (!fileData || fileData.trim().length === 0) {
+      console.log("[Startup] Player data file empty, starting fresh");
+      return;
+    }
+
+    const data = JSON.parse(fileData);
+
+    for (const record of data) {
+      playerMetadata.set(record.id, {
+        name: record.name,
+        color: record.color,
+        kingX: 0,
+        kingY: 0,
+      });
+
+      if (record.kills > 0) {
+        leaderboard.set(record.id, record.kills);
+      }
+    }
+
+    console.log(`[Startup] Loaded ${data.length} player records`);
+  } catch (e) {
+    console.error("[Startup] Failed to load players:", e);
+  }
 }
 
-// Auto-save every 60 seconds
+// Auto-save every 2 minutes (reduce disk I/O)
 setInterval(() => {
-    saveWorld();
-    savePlayerMetadata();
-}, 60 * 1000);
+  saveWorld();
+  savePlayerMetadata();
+}, 120 * 1000);
 
 // Save on graceful shutdown
-process.on('SIGINT', () => {
-    console.log('\n[Shutdown] Saving world...');
-    saveWorld();
-    savePlayerMetadata();
-    process.exit(0);
+process.on("SIGINT", async () => {
+  console.log("\n[Shutdown] Saving world...");
+  await saveWorld();
+  await savePlayerMetadata();
+  console.log("[Shutdown] Complete");
+  process.exit();
 });
 
-process.on('SIGTERM', () => {
-    console.log('\n[Shutdown] Saving world...');
-    saveWorld();
-    savePlayerMetadata();
-    process.exit(0);
+process.on("SIGTERM", () => {
+  console.log("\n[Shutdown] Saving world...");
+  saveWorld();
+  savePlayerMetadata();
+  process.exit(0);
 });
 
-// Load world on startup
-console.log('[Startup] Loading world...');
-loadWorld();
-loadPlayerMetadata();
+// Load world on startup (async)
+console.log("[Startup] Loading world...");
+await loadWorld();
+await loadPlayerMetadata();
 
 // WebSocket handlers
-global.app = uWS.App().ws('/*', {
+global.app = uWS
+  .App()
+  .ws("/*", {
     compression: 0,
     maxPayloadLength: 4096,
     idleTimeout: 0,
-    
+
     open: (ws) => {
-        ws.id = generateId();
-        clients[ws.id] = ws;
-        
-        ws.verified = false;
-        ws.dead = false;
-        ws.respawnTime = 0;
-        ws.lastMovedTime = 0;
-        ws.chatMsgsLast5s = 0;
-        ws.lastChat5sTime = 0;
-        ws.camera = { x: 0, y: 0, scale: 1 };
-        
-        ws.subscribe('global');
-        
-        // Don't send initial board state yet - wait for spawn/captcha
-        leaderboard.set(ws.id, 0);
-        broadcastToAll(sendLeaderboard());
+      ws.id = generateId();
+      clients[ws.id] = ws;
+
+      ws.verified = false;
+      ws.dead = false;
+      ws.respawnTime = 0;
+      ws.lastMovedTime = 0;
+      ws.chatMsgsLast5s = 0;
+      ws.lastChat5sTime = 0;
+      ws.camera = { x: 0, y: 0, scale: 1 };
+
+      ws.subscribe("global");
+
+      // Don't send initial board state yet - wait for spawn/captcha
+      leaderboard.set(ws.id, 0);
+      broadcastToAll(sendLeaderboard());
     },
-    
+
     message: (ws, data) => {
-        const u8 = new Uint8Array(data);
-        
-        // Camera position update (new message type)
-        if(data.byteLength === 12){
-            const decoded = new Int16Array(data);
-            if(decoded[0] === 55552){
-                ws.camera.x = decoded[1];
-                ws.camera.y = decoded[2];
-                ws.camera.scale = decoded[3] / 100; // Scale stored as integer * 100
-                
-                // Send viewport state if needed (throttled)
-                const now = Date.now();
-                if(!ws.lastViewportSync || now - ws.lastViewportSync > 1000){
-                    ws.lastViewportSync = now;
-                    sendViewportState(ws, ws.camera.x, ws.camera.y);
-                }
-                return;
-            }
+      const u8 = new Uint8Array(data);
+
+      // Camera position update (new message type)
+      if (data.byteLength === 12) {
+        const decoded = new Int16Array(data);
+        if (decoded[0] === 55552) {
+          ws.camera.x = decoded[1];
+          ws.camera.y = decoded[2];
+          ws.camera.scale = decoded[3] / 100; // Scale stored as integer * 100
+
+          // Send viewport state if needed (throttled)
+          const now = Date.now();
+          if (!ws.lastViewportSync || now - ws.lastViewportSync > 1000) {
+            ws.lastViewportSync = now;
+            sendViewportState(ws, ws.camera.x, ws.camera.y);
+          }
+          return;
         }
-        
-        // Player info (name and color)
-        if(u8[0] === 55551){
-            const nameLength = u8[1];
-            const r = u8[2];
-            const g = u8[3];
-            const b = u8[4];
-            
-            let name = decodeText(u8, 5, 5 + nameLength);
-            
-            // Sanitize name
-            name = name.replace(/[^a-zA-Z0-9_\-\s]/g, '').substring(0, 16);
-            if(name.length === 0) name = 'Player' + ws.id;
-            
-            // Store player metadata
-            playerMetadata.set(ws.id, {
-                name: name,
-                color: {r, g, b},
+      }
+
+      // Player info (name and color)
+      const u16 = new Uint16Array(data);
+      if (u16[0] === 55551) {
+        const nameLength = u8[2];
+        const r = u8[3];
+        const g = u8[4];
+        const b = u8[5];
+
+        let name = decodeText(u8, 6, 6 + nameLength);
+
+        // Sanitize name
+        name = name.replace(/[^a-zA-Z0-9_\-\s]/g, "").substring(0, 16);
+        if (name.length === 0) name = "Player" + ws.id;
+
+        // Store player metadata
+        playerMetadata.set(ws.id, {
+          name: name,
+          color: { r, g, b },
+          kingX: 0,
+          kingY: 0,
+        });
+
+        // Initialize leaderboard entry if not exists
+        if (!leaderboard.has(ws.id)) {
+          leaderboard.set(ws.id, 0);
+        }
+
+        // Broadcast updated leaderboard with new name
+        broadcastToAll(sendLeaderboard());
+        return;
+      }
+
+      // Unverified players: handle captcha and spawn
+      if (
+        ws.verified === false ||
+        (ws.dead === true && !(u8[0] === 0xf7 && u8[1] === 0xb7))
+      ) {
+        (async () => {
+          if (ws.verified === false) {
+            // Player metadata will be set by the client after captcha
+            // For now, use default values until player sends their info
+            if (!playerMetadata.has(ws.id)) {
+              playerMetadata.set(ws.id, {
+                name: teamToName(ws.id),
+                color: teamToColor(ws.id),
                 kingX: 0,
-                kingY: 0
-            });
-            
-            console.log(`Player ${ws.id} set name: ${name}, color: rgb(${r},${g},${b})`);
-            
-            // Broadcast updated leaderboard with new name
-            broadcastToAll(sendLeaderboard());
-            return;
-        }
-        
-        // Unverified players: handle captcha and spawn
-        if(ws.verified === false || (ws.dead === true && !(u8[0] === 0xf7 && u8[1] === 0xb7))){
-            (async() => {
-                if(ws.verified === false){
-                    // Captcha verification
-                    const captchaKey = decodeText(u8);
-                    if(usedCaptchaKeys[captchaKey] !== undefined){
-                        if(!ws.closed) ws.close();
-                        return;
-                    }
-                    
-                    // Player metadata will be set by the client after captcha
-                    // For now, use default values until player sends their info
-                    if(!playerMetadata.has(ws.id)){
-                        playerMetadata.set(ws.id, {
-                            name: teamToName(ws.id),
-                            color: teamToColor(ws.id),
-                            kingX: 0,
-                            kingY: 0
-                        });
-                    }
-                    
-                    // Verify captcha
-                    try {
-                        const response = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
-                            method: 'POST',
-                            headers: { "Content-Type": "application/x-www-form-urlencoded" },
-                            body: `secret=${captchaSecretKey}&response=${captchaKey}`,
-                        });
-                        
-                        const result = await response.json();
-                        
-                        if(result.success){
-                            ws.verified = true;
-                            usedCaptchaKeys[captchaKey] = Date.now();
-                        } else {
-                            if(!ws.closed) ws.close();
-                            return;
-                        }
-                    } catch(e){
-                        console.error('Captcha verification failed:', e);
-                        if(!ws.closed) ws.close();
-                        return;
-                    }
-                }
-                
-                if(Date.now() < ws.respawnTime) return;
-                
-                // Spawn king
-                const spawn = findSpawnLocation();
-                setSquare(spawn.x, spawn.y, 6, ws.id);
-                
-                const meta = playerMetadata.get(ws.id);
-                if(meta){
-                    meta.kingX = spawn.x;
-                    meta.kingY = spawn.y;
-                }
-                
-                ws.verified = true;
-                ws.dead = false;
-                
-                // Send initial viewport
-                sendViewportState(ws, spawn.x, spawn.y);
-                ws.camera.x = spawn.x;
-                ws.camera.y = spawn.y;
-            })();
-            return;
-        }
-        
-        if(data.byteLength % 2 !== 0) return;
-        const decoded = new Uint16Array(data);
-        
-        // Chat message
-        if(decoded[0] === 47095){
-            if(data.byteLength > 1000) return;
-            
-            const now = Date.now();
-            if(now - ws.lastChat5sTime > 10000){
-                ws.chatMsgsLast5s = 0;
-                ws.lastChat5sTime = now;
+                kingY: 0,
+              });
             }
-            
-            ws.chatMsgsLast5s++;
-            if(ws.chatMsgsLast5s > 3){
-                let chatMessage = '[Server] Spam detected. You cannot send messages for up to 10s.';
-                if(chatMessage.length % 2 === 1) chatMessage += ' ';
-                
-                const buf = new Uint8Array(chatMessage.length + 4);
-                const u16 = new Uint16Array(buf.buffer);
-                buf[0] = 247;
-                buf[1] = 183;
-                u16[1] = 65534;
-                encodeAtPosition(chatMessage, buf, 4);
-                send(ws, buf);
+
+            // Bypass captcha in development mode - but still wait for player setup
+            if (isDev) {
+              // Don't set verified=true yet, let the spawn logic handle it
+              // Just skip captcha verification and continue to spawn check
+            } else {
+              // Captcha verification (production only)
+              const captchaKey = decodeText(u8);
+              if (usedCaptchaKeys[captchaKey] !== undefined) {
+                if (!ws.closed) ws.close();
                 return;
-            }
-            
-            const txt = decodeText(data, 2);
-            if(txt.length > 64) return;
-            
-            let chatMessage = txt;
-            let id = ws.id;
-            
-            if(isBadWord(chatMessage)) return;
-            
-            if(chatMessage.slice(0, 7) === '/announce'){
-                chatMessage = '[SERVER] ' + chatMessage.slice(8);
-                id = 65534;
-            }
-            
-            if(chatMessage.length % 2 === 1) chatMessage += ' ';
-            
-            const buf = new Uint8Array(chatMessage.length + 4);
-            const u16 = new Uint16Array(buf.buffer);
-            buf[0] = 247;
-            buf[1] = 183;
-            u16[1] = id;
-            encodeAtPosition(chatMessage, buf, 4);
-            broadcastToAll(buf);
-        }
-        
-        // Move piece
-        else if(data.byteLength === 8){
-            const now = Date.now();
-            if(now - ws.lastMovedTime < moveCooldown - 500) return;
-            
-            const startX = decoded[0];
-            const startY = decoded[1];
-            const finX = decoded[2];
-            const finY = decoded[3];
-            
-            const startPiece = spatialHash.get(startX, startY);
-            
-            // Validate ownership
-            if(startPiece.team !== ws.id) return;
-            
-            // Validate move legality
-            const legalMoves = generateLegalMoves(startX, startY, spatialHash, ws.id);
-            
-            let isLegal = false;
-            for(const [mx, my] of legalMoves){
-                if(mx === finX && my === finY){
-                    isLegal = true;
-                    break;
+              }
+
+              try {
+                const response = await fetch(
+                  "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+                  {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/x-www-form-urlencoded",
+                    },
+                    body: `secret=${captchaSecretKey}&response=${captchaKey}`,
+                  },
+                );
+
+                const result = await response.json();
+
+                if (result.success) {
+                  ws.verified = true;
+                  usedCaptchaKeys[captchaKey] = Date.now();
+                } else {
+                  if (!ws.closed) ws.close();
+                  return;
                 }
-            }
-            
-            if(!isLegal) return;
-            
-            move(startX, startY, finX, finY, ws.id);
-            ws.lastMovedTime = now;
-        }
-    },
-    
-    close: (ws) => {
-        delete clients[ws.id];
-        ws.closed = true;
-        
-        if(ws.id) teamsToNeutralize.push(ws.id);
-        
-        if(leaderboard.has(ws.id)){
-            leaderboard.delete(ws.id);
-            broadcastToAll(sendLeaderboard());
-        }
-        
-        playerMetadata.delete(ws.id);
-        
-        if(ws.ip) delete connectedIps[ws.ip];
-    },
-    
-    upgrade: (res, req, context) => {
-        let ip = getIp(res, req);
-        
-        if(ip !== undefined){
-            if(connectedIps[ip] === true){
-                res.end("Connection rejected");
-                console.log('ws ratelimit', ip);
+              } catch (e) {
+                console.error("Captcha verification failed:", e);
+                if (!ws.closed) ws.close();
                 return;
+              }
             }
-            connectedIps[ip] = true;
+          }
+
+          if (Date.now() < ws.respawnTime) return;
+
+          // Check if player has set their name (player setup completed)
+          let meta = playerMetadata.get(ws.id);
+          const defaultName = teamToName(ws.id);
+
+          if (!meta || meta.name === defaultName) {
+            return;
+          }
+
+          console.log(`[Spawn] Player ${ws.id} (${meta.name}) ready to spawn`);
+
+          // Spawn king
+          const spawn = findSpawnLocation();
+          setSquare(spawn.x, spawn.y, 6, ws.id);
+
+          // Update metadata with king position
+          meta.kingX = spawn.x;
+          meta.kingY = spawn.y;
+
+          ws.verified = true;
+          ws.dead = false;
+
+          console.log(
+            `[Spawn] ✓ Player ${ws.id} (${meta.name}) spawned at ${spawn.x},${spawn.y}`,
+          );
+
+          // Send initial viewport
+          sendViewportState(ws, spawn.x, spawn.y);
+          ws.camera.x = spawn.x;
+          ws.camera.y = spawn.y;
+
+          console.log(`[Spawn] ✓ Sent viewport state to player ${ws.id}`);
+        })();
+        return;
+      }
+
+      if (data.byteLength % 2 !== 0) return;
+      const decoded = new Uint16Array(data);
+
+      // Chat message
+      if (decoded[0] === 47095) {
+        if (data.byteLength > 1000) return;
+
+        const now = Date.now();
+        if (now - ws.lastChat5sTime > 10000) {
+          ws.chatMsgsLast5s = 0;
+          ws.lastChat5sTime = now;
         }
-        
-        res.upgrade(
-            { ip },
-            req.getHeader('sec-websocket-key'),
-            req.getHeader('sec-websocket-protocol'),
-            req.getHeader('sec-websocket-extensions'),
-            context
+
+        ws.chatMsgsLast5s++;
+        if (ws.chatMsgsLast5s > 3) {
+          let chatMessage =
+            "[Server] Spam detected. You cannot send messages for up to 10s.";
+          if (chatMessage.length % 2 === 1) chatMessage += " ";
+
+          const buf = new Uint8Array(chatMessage.length + 4);
+          const u16 = new Uint16Array(buf.buffer);
+          buf[0] = 247;
+          buf[1] = 183;
+          u16[1] = 65534;
+          encodeAtPosition(chatMessage, buf, 4);
+          send(ws, buf);
+          return;
+        }
+
+        const txt = decodeText(data, 2);
+        if (txt.length > 64) return;
+
+        let chatMessage = txt;
+        let id = ws.id;
+
+        if (isBadWord(chatMessage)) return;
+
+        if (chatMessage.slice(0, 7) === "/announce") {
+          chatMessage = "[SERVER] " + chatMessage.slice(8);
+          id = 65534;
+        }
+
+        if (chatMessage.length % 2 === 1) chatMessage += " ";
+
+        const buf = new Uint8Array(chatMessage.length + 4);
+        const u16 = new Uint16Array(buf.buffer);
+        buf[0] = 247;
+        buf[1] = 183;
+        u16[1] = id;
+        encodeAtPosition(chatMessage, buf, 4);
+        broadcastToAll(buf);
+      }
+
+      // Move piece
+      else if (data.byteLength === 8) {
+        const now = Date.now();
+        if (now - ws.lastMovedTime < moveCooldown - 500) return;
+
+        const startX = decoded[0];
+        const startY = decoded[1];
+        const finX = decoded[2];
+        const finY = decoded[3];
+
+        const startPiece = spatialHash.get(startX, startY);
+
+        // Validate ownership
+        if (startPiece.team !== ws.id) return;
+
+        // Validate move legality
+        const legalMoves = generateLegalMoves(
+          startX,
+          startY,
+          spatialHash,
+          ws.id,
         );
+
+        let isLegal = false;
+        for (const [mx, my] of legalMoves) {
+          if (mx === finX && my === finY) {
+            isLegal = true;
+            break;
+          }
+        }
+
+        if (!isLegal) return;
+
+        move(startX, startY, finX, finY, ws.id);
+        ws.lastMovedTime = now;
+      }
     },
-}).listen(PORT, (token) => {
-    if(token){
-        console.log('Server Listening to Port ' + PORT);
+
+    close: (ws) => {
+      delete clients[ws.id];
+      ws.closed = true;
+
+      if (ws.id) teamsToNeutralize.push(ws.id);
+
+      if (leaderboard.has(ws.id)) {
+        leaderboard.delete(ws.id);
+        broadcastToAll(sendLeaderboard());
+      }
+
+      playerMetadata.delete(ws.id);
+
+      if (ws.ip) delete connectedIps[ws.ip];
+    },
+
+    upgrade: (res, req, context) => {
+      let ip = getIp(res, req);
+
+      if (ip !== undefined) {
+        if (connectedIps[ip] === true) {
+          res.end("Connection rejected");
+          console.log("ws ratelimit", ip);
+          return;
+        }
+        connectedIps[ip] = true;
+      }
+
+      res.upgrade(
+        { ip },
+        req.getHeader("sec-websocket-key"),
+        req.getHeader("sec-websocket-protocol"),
+        req.getHeader("sec-websocket-extensions"),
+        context,
+      );
+    },
+  })
+  .listen(PORT, (token) => {
+    if (token) {
+      console.log("Server Listening to Port " + PORT);
     } else {
-        console.log('Failed to Listen to Port ' + PORT);
+      console.log("Failed to Listen to Port " + PORT);
     }
-});
+  });
 
 function getIp(res, req) {
-    let forwardedIp = req.getHeader('cf-connecting-ip') || 
-        req.getHeader('x-forwarded-for') || 
-        req.getHeader('x-real-ip');
-    
-    if(forwardedIp){
-        return forwardedIp.split(',')[0].trim();
-    }
-    
-    let rawIp = new TextDecoder().decode(res.getRemoteAddressAsText());
-    
-    if(rawIp.startsWith('::ffff:')){
-        return rawIp.substring(7);
-    }
-    
-    return rawIp;
+  let forwardedIp =
+    req.getHeader("cf-connecting-ip") ||
+    req.getHeader("x-forwarded-for") ||
+    req.getHeader("x-real-ip");
+
+  if (forwardedIp) {
+    return forwardedIp.split(",")[0].trim();
+  }
+
+  let rawIp = new TextDecoder().decode(res.getRemoteAddressAsText());
+
+  if (rawIp.startsWith("::ffff:")) {
+    return rawIp.substring(7);
+  }
+
+  return rawIp;
 }
 
 global.send = (ws, msg) => {
-    if(!ws.closed) ws.send(msg, true, false);
+  if (!ws.closed) ws.send(msg, true, false);
 };
 
 // HTTP handlers
 let servedIps = {};
 setInterval(() => {
-    servedIps = {};
-    global.fileServedIps = {};
+  servedIps = {};
+  global.fileServedIps = {};
 }, 20 * 1000);
 
 app.get("/", (res, req) => {
-    const ip = getIp(res, req);
-    if(servedIps[ip] === undefined) servedIps[ip] = 0;
-    
-    if(servedIps[ip] > 3 && isProd === true){
-        res.end('ratelimit. Try again in 20 seconds.');
-        console.log('main site ratelimit from', ip);
-        return;
-    }
-    servedIps[ip]++;
-    
-    res.end(fs.readFileSync('client/index.html'));
+  const ip = getIp(res, req);
+  if (servedIps[ip] === undefined) servedIps[ip] = 0;
+
+  if (servedIps[ip] > 3 && isProd === true) {
+    res.end("ratelimit. Try again in 20 seconds.");
+    console.log("main site ratelimit from", ip);
+    return;
+  }
+  servedIps[ip]++;
+
+  // Disable caching in development for hot reloading
+  if (!isProd) {
+    res.writeHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.writeHeader("Pragma", "no-cache");
+    res.writeHeader("Expires", "0");
+  }
+
+  res.end(fsSync.readFileSync("client/index.html"));
 });
 
 global.fileServedIps = {};
 
 app.get("/:filename/:filename2", (res, req) => {
-    const ip = getIp(res, req);
-    if(fileServedIps[ip] === undefined) fileServedIps[ip] = 0;
-    fileServedIps[ip]++;
-    
-    if(fileServedIps[ip] > 25 && isProd === true){
-        res.end('ratelimit. try again in 20 seconds.');
-        console.log('file ratelimit', ip);
-        return;
+  const ip = getIp(res, req);
+  if (fileServedIps[ip] === undefined) fileServedIps[ip] = 0;
+  fileServedIps[ip]++;
+
+  if (fileServedIps[ip] > 25 && isProd === true) {
+    res.end("ratelimit. try again in 20 seconds.");
+    console.log("file ratelimit", ip);
+    return;
+  }
+
+  if (req.getParameter(0) === "server") {
+    res.cork(() => res.end());
+    return;
+  }
+
+  let path = req.getParameter(0) + "/" + req.getParameter(1);
+  if (fsSync.existsSync(path) && fsSync.statSync(path).isFile()) {
+    const pathEnd = path.slice(path.length - 3);
+    if (pathEnd === "css") res.writeHeader("Content-Type", "text/css");
+    else res.writeHeader("Content-Type", "text/javascript");
+
+    // Disable caching in development for hot reloading
+    if (!isProd) {
+      res.writeHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      res.writeHeader("Pragma", "no-cache");
+      res.writeHeader("Expires", "0");
     }
-    
-    if(req.getParameter(0) === 'server'){
-        res.cork(() => res.end());
-        return;
-    }
-    
-    let path = req.getParameter(0) + '/' + req.getParameter(1);
-    if(fs.existsSync(path) && fs.statSync(path).isFile()){
-        const pathEnd = path.slice(path.length - 3);
-        if(pathEnd === 'css') res.writeHeader("Content-Type", "text/css");
-        else res.writeHeader("Content-Type", "text/javascript");
-        res.end(fs.readFileSync(path));
-    } else {
-        res.cork(() => {
-            res.writeStatus('404 Not Found');
-            res.end();
-        });
-    }
+
+    res.end(fsSync.readFileSync(path));
+  } else {
+    res.cork(() => {
+      res.writeStatus("404 Not Found");
+      res.end();
+    });
+  }
 });
 
 app.get("/client/assets/:filename", (res, req) => {
-    const ip = getIp(res, req);
-    if(fileServedIps[ip] === undefined) fileServedIps[ip] = 0;
-    fileServedIps[ip]++;
-    
-    if(fileServedIps[ip] > 25 && isProd === true){
-        res.end('ratelimit. try again in 20 seconds.');
-        console.log('asset file ratelimit', ip);
-        return;
-    }
-    
-    let path = 'client/assets/' + req.getParameter(0);
-    if(fs.existsSync(path) && fs.statSync(path).isFile()){
-        const pathEnd = path.slice(path.length - 3);
-        if(pathEnd === 'png') res.writeHeader("Content-Type", "image/png");
-        else res.writeHeader("Content-Type", "audio/mpeg");
-        res.end(fs.readFileSync(path));
-    } else {
-        res.cork(() => {
-            res.writeStatus('404 Not Found');
-            res.end();
-        });
-    }
+  const ip = getIp(res, req);
+  if (fileServedIps[ip] === undefined) fileServedIps[ip] = 0;
+  fileServedIps[ip]++;
+
+  if (fileServedIps[ip] > 25 && isProd === true) {
+    res.end("ratelimit. try again in 20 seconds.");
+    console.log("asset file ratelimit", ip);
+    return;
+  }
+
+  let path = "client/assets/" + req.getParameter(0);
+  if (fsSync.existsSync(path) && fsSync.statSync(path).isFile()) {
+    const pathEnd = path.slice(path.length - 3);
+    if (pathEnd === "png") res.writeHeader("Content-Type", "image/png");
+    else res.writeHeader("Content-Type", "audio/mpeg");
+    res.end(fsSync.readFileSync(path));
+  } else {
+    res.cork(() => {
+      res.writeStatus("404 Not Found");
+      res.end();
+    });
+  }
 });
 
 // Bad word filter
-const alphabet = 'abcdefghijklmnopqrstuvwxyz';
+const alphabet = "abcdefghijklmnopqrstuvwxyz";
 const alphabetMap = {};
-for(let i = 0; i < alphabet.length; i++){
-    alphabetMap[alphabet[i]] = true;
+for (let i = 0; i < alphabet.length; i++) {
+  alphabetMap[alphabet[i]] = true;
 }
 
-function isBadWord(str){
-    let filtered = '';
-    for(let i = 0; i < str.length; i++){
-        const char = str[i].toLowerCase();
-        if(alphabetMap[char]) filtered += char;
+function isBadWord(str) {
+  let filtered = "";
+  for (let i = 0; i < str.length; i++) {
+    const char = str[i].toLowerCase();
+    if (alphabetMap[char]) filtered += char;
+  }
+
+  for (const word of badWords) {
+    if (filtered.includes(word)) {
+      console.log("bad word", word, filtered);
+      return true;
     }
-    
-    for(const word of badWords){
-        if(filtered.includes(word)){
-            console.log('bad word', word, filtered);
-            return true;
-        }
-    }
-    return false;
+  }
+  return false;
 }
 
 const encoder = new TextEncoder();
 function encodeAtPosition(string, u8array, position) {
-    return encoder.encodeInto(string, position ? u8array.subarray(position | 0) : u8array);
+  return encoder.encodeInto(
+    string,
+    position ? u8array.subarray(position | 0) : u8array,
+  );
 }

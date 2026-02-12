@@ -1,82 +1,182 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
-
-<head>
-    <meta charset="utf-8">
+  <head>
+    <meta charset="utf-8" />
     <title>Infinichess</title>
-    <meta name="msapplication-TileColor" content="#0a0a0a">
-    <meta name="theme-color" content="#0a0a0a">
+    <meta name="msapplication-TileColor" content="#0a0a0a" />
+    <meta name="theme-color" content="#0a0a0a" />
 
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Sometype+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Sometype+Mono:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
     <link href="/client/style.css" rel="stylesheet" type="text/css" />
 
-    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?compat=recaptcha"></script>
-</head>
+    <script>
+      // Only load Turnstile in production (not localhost)
+      if (
+        window.location.hostname !== "localhost" &&
+        window.location.hostname !== "127.0.0.1"
+      ) {
+        const script = document.createElement("script");
+        script.src =
+          "https://challenges.cloudflare.com/turnstile/v0/api.js?compat=recaptcha";
+        document.head.appendChild(script);
+      }
+    </script>
+  </head>
 
-<body>
+  <body>
     <!-- Captcha Screen -->
     <div id="fullscreenDiv">
-        <div class="auth-container">
-            <div class="auth-header">
-                <h1>INFINICHESS</h1>
-                <p class="subtitle">INFINITE CHESS. INFINITE WAR.</p>
-            </div>
-            <div class="g-recaptcha" data-sitekey="6Lf3fAQrAAAAAHA16QHwE18_MZU9Vc3Iex6jVW2G"></div>
+      <div class="auth-container">
+        <div class="auth-header">
+          <h1>INFINICHESS</h1>
+          <p class="subtitle">MASSIVELY MULTIPLAYER CHESS.</p>
         </div>
+        <div
+          class="g-recaptcha"
+          data-sitekey="6Lf3fAQrAAAAAHA16QHwE18_MZU9Vc3Iex6jVW2G"
+        ></div>
+      </div>
     </div>
 
     <!-- Player Setup Modal -->
     <div id="playerSetupDiv" class="hidden">
-        <div class="setup-panel">
-            <div class="setup-header">
-                <h2>DEPLOY</h2>
-                <div class="header-line"></div>
-            </div>
-            
-            <div class="form-group">
-                <label>DESIGNATION</label>
-                <input type="text" id="playerName" maxlength="16" placeholder="ENTER_CALLSIGN" autocomplete="off" spellcheck="false">
-            </div>
-            
-            <div class="form-group">
-                <label>UNIT_COLOR</label>
-                <div class="color-grid">
-                    <div class="color-swatch selected" data-color="#FF0000" style="background: #FF0000;"></div>
-                    <div class="color-swatch" data-color="#00FF00" style="background: #00FF00;"></div>
-                    <div class="color-swatch" data-color="#0000FF" style="background: #0000FF;"></div>
-                    <div class="color-swatch" data-color="#FFFF00" style="background: #FFFF00;"></div>
-                    <div class="color-swatch" data-color="#FF00FF" style="background: #FF00FF;"></div>
-                    <div class="color-swatch" data-color="#00FFFF" style="background: #00FFFF;"></div>
-                    <div class="color-swatch" data-color="#FF8800" style="background: #FF8800;"></div>
-                    <div class="color-swatch" data-color="#FFFFFF" style="background: #FFFFFF;"></div>
-                </div>
-            </div>
-            
-            <div class="preview-panel">
-                <div class="preview-label">// VISUAL_CONFIRMATION</div>
-                <canvas id="previewCanvas" width="100" height="100"></canvas>
-                <div id="previewName">UNKNOWN</div>
-            </div>
-            
-            <button id="startGameBtn" class="deploy-btn">[ INITIATE_DEPLOYMENT ]</button>
+      <div class="setup-panel">
+        <div class="setup-header">
+          <h2>DEPLOY</h2>
+          <div class="header-line"></div>
         </div>
+
+        <div class="form-group">
+          <label>DESIGNATION</label>
+          <input
+            type="text"
+            id="playerName"
+            maxlength="16"
+            placeholder="ENTER_CALLSIGN"
+            autocomplete="off"
+            spellcheck="false"
+          />
+        </div>
+
+        <div class="form-group">
+          <label>UNIT_COLOR</label>
+          <div class="color-grid">
+            <div
+              class="color-swatch selected"
+              data-color="#FFB3BA"
+              style="background: #ffb3ba"
+            ></div>
+            <div
+              class="color-swatch"
+              data-color="#BAFFC9"
+              style="background: #baffc9"
+            ></div>
+            <div
+              class="color-swatch"
+              data-color="#BAE1FF"
+              style="background: #bae1ff"
+            ></div>
+            <div
+              class="color-swatch"
+              data-color="#FFFFBA"
+              style="background: #ffffba"
+            ></div>
+            <div
+              class="color-swatch"
+              data-color="#FFBAF3"
+              style="background: #ffbaf3"
+            ></div>
+            <div
+              class="color-swatch"
+              data-color="#BFFFFF"
+              style="background: #bfffff"
+            ></div>
+            <div
+              class="color-swatch"
+              data-color="#FFD9BA"
+              style="background: #ffd9ba"
+            ></div>
+            <div
+              class="color-swatch"
+              data-color="#E7BAFF"
+              style="background: #e7baff"
+            ></div>
+          </div>
+        </div>
+
+        <div class="preview-panel">
+          <div class="preview-label">// VISUAL_CONFIRMATION</div>
+          <canvas id="previewCanvas" width="150" height="150"></canvas>
+          <div id="previewName">UNKNOWN</div>
+        </div>
+
+        <button id="startGameBtn" class="deploy-btn">
+          [ INITIATE_DEPLOYMENT ]
+        </button>
+      </div>
     </div>
 
     <canvas id="minimapCanvas" style="z-index: -1"></canvas>
     <canvas id="canvas" style="z-index: -2"></canvas>
 
     <div class="chatContainer hidden">
-        <input class="chat hidden" type="text" autocomplete="off" spellcheck="false" maxlength="64">
-        <div class="chat-div"></div>
-        <div class="leaderboard-div"></div>
+      <input
+        class="chat hidden"
+        type="text"
+        autocomplete="off"
+        spellcheck="false"
+        maxlength="64"
+      />
+      <div class="chat-div"></div>
+      <div class="leaderboard-div">
+        <div class="leaderboard-header">
+          <div class="online-count">
+            <div class="online-indicator"></div>
+            <span id="onlineCount">0 ONLINE</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Statistics Panel -->
+    <div class="stats-panel">
+      <div class="stats-header">STATS</div>
+      <div class="stats-content">
+        <div class="stat-row">
+          <span class="stat-label">PLAYER:</span>
+          <span class="stat-value" id="stat-name">-</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">COLOR:</span>
+          <span class="stat-value" id="stat-color">-</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">MODE:</span>
+          <span class="stat-value" id="stat-mode">-</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">POSITION:</span>
+          <span class="stat-value" id="stat-pos">-</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">ZOOM:</span>
+          <span class="stat-value" id="stat-zoom">1.0x</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">PIECES:</span>
+          <span class="stat-value" id="stat-pieces">0</span>
+        </div>
+      </div>
     </div>
 
     <script src="/shared/constants.js"></script>
     <script src="/client/input.js"></script>
     <script src="/client/client.js"></script>
     <script src="/client/networking.js"></script>
-</body>
-
+  </body>
 </html>

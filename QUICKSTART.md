@@ -6,12 +6,26 @@
 # Install dependencies
 npm install
 
-# Start server
+# Start server (production)
 npm start
+
+# Start server with hot reloading (development)
+npm run dev
 
 # Open in browser
 open http://localhost:3000
 ```
+
+## Hot Reloading
+
+The `npm run dev` command uses **nodemon** to automatically restart the server when files change:
+
+- Watches: `server/`, `shared/`, `client/` directories
+- Monitors: `.js`, `.json`, `.html`, `.css` files
+- Delay: 500ms after last change before restart
+- Auto-reconnect: Client will reconnect after server restarts
+
+**Note:** Client-side changes (HTML, CSS, JS) require a browser refresh after server restart.
 
 ## Key Files
 
@@ -83,6 +97,13 @@ squareSize = 150      // Pixels per square
 1. Edit `shared/constants.js` - change `boardW` and `boardH`
 2. Restart server
 
+## Development Workflow
+
+1. Run `npm run dev` to start server with hot reloading
+2. Make changes to server files - server auto-restarts
+3. Make changes to client files - refresh browser after restart
+4. Use browser DevTools for client debugging
+
 ## Debugging
 
 ```javascript
@@ -93,6 +114,8 @@ console.log({teams})          // Print teams
 // Client console
 console.log(board)           // Print local board
 console.log('Legal:', legalMoves)  // Print legal moves
+console.log(spatialHash.getAllPieces())  // Print all pieces
+console.log({camera, infiniteMode})  // Print camera state
 ```
 
 ## Testing Commands
