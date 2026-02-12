@@ -122,9 +122,22 @@ window.onkeydown = window.onkeyup = (e) => {
 };
 
 window.onwheel = (e) => {
+  const oldScale = camera.scale;
   camera.scale *= 1 - e.deltaY / 2100;
   if (camera.scale > 6) camera.scale = 6;
   else if (camera.scale < 0.27) camera.scale = 0.27;
+
+  // Zoom toward mouse position: keep the world point under the cursor fixed
+  const rect = canvas.getBoundingClientRect();
+  const mx = ((e.clientX - rect.x) / rect.width) * canvas.width;
+  const my = ((e.clientY - rect.y) / rect.height) * canvas.height;
+  const cx = mx - canvas.width / 2;
+  const cy = my - canvas.height / 2;
+
+  // Adjust camera so the world point under cursor stays fixed
+  camera.x = cx / camera.scale - (cx / oldScale - camera.x);
+  camera.y = cy / camera.scale - (cy / oldScale - camera.y);
+
   changed = true;
 };
 
@@ -163,7 +176,7 @@ function appendChatMessage(msg, color = "white") {
   }, 30000);
 }
 
-const leaderboard = document.querySelector(".leaderboard-div");
+const leaderboard = document.getElementById("leaderboard-content");
 function addToLeaderboard(
   playerName,
   playerId,

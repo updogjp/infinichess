@@ -109,6 +109,18 @@
           </div>
         </div>
 
+        <div class="form-group">
+          <label>STARTING_PIECE</label>
+          <div class="piece-grid">
+            <div class="piece-option selected" data-piece="6" title="King">♔</div>
+            <div class="piece-option" data-piece="5" title="Queen">♕</div>
+            <div class="piece-option" data-piece="4" title="Rook">♖</div>
+            <div class="piece-option" data-piece="3" title="Bishop">♗</div>
+            <div class="piece-option" data-piece="2" title="Knight">♘</div>
+            <div class="piece-option" data-piece="1" title="Pawn">♙</div>
+          </div>
+        </div>
+
         <div class="preview-panel">
           <div class="preview-label">// VISUAL_CONFIRMATION</div>
           <canvas id="previewCanvas" width="150" height="150"></canvas>
@@ -139,13 +151,18 @@
             <div class="online-indicator"></div>
             <span id="onlineCount">0 ONLINE</span>
           </div>
+          <button class="collapse-btn" data-target="leaderboard-content">−</button>
         </div>
+        <div id="leaderboard-content"></div>
       </div>
     </div>
 
     <!-- Statistics Panel -->
     <div class="stats-panel">
-      <div class="stats-header">STATS</div>
+      <div class="stats-header">
+        <span>STATS</span>
+        <button class="collapse-btn" data-target="stats-content">−</button>
+      </div>
       <div class="stats-content">
         <div class="stat-row">
           <span class="stat-label">PLAYER:</span>
@@ -172,7 +189,14 @@
           <span class="stat-value" id="stat-pieces">0</span>
         </div>
       </div>
+      <button id="recenterBtn" class="recenter-btn">[ RECENTER ]</button>
     </div>
+
+    <!-- Piece Hover Tooltip -->
+    <div id="pieceTooltip" class="piece-tooltip hidden"></div>
+
+    <!-- Toast Notifications -->
+    <div id="toastContainer" class="toast-container"></div>
 
     <script src="/shared/constants.js"></script>
     <script src="/client/input.js"></script>

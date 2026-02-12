@@ -4,6 +4,7 @@ ws.binaryType = "arraybuffer";
 window.selfId = -1;
 window.playerName = "";
 window.playerColor = "#FFB3BA"; // Default pastel pink (matches first swatch)
+window.playerPiece = 6; // Default to king (1=pawn, 2=knight, 3=bishop, 4=rook, 5=queen, 6=king)
 
 // Spatial hash on client side
 const spatialHash = new SpatialHash();
@@ -234,8 +235,11 @@ ws.addEventListener("message", function (data) {
 
     arr.sort((a, b) => b.kills - a.kills);
 
+    // Update global player names map for nameplates
+    if (!window.playerNamesMap) window.playerNamesMap = {};
     for (let i = 0; i < arr.length; i++) {
       const { name, id, kills, color } = arr[i];
+      window.playerNamesMap[id] = { name, kills, color };
       addToLeaderboard(
         name,
         id,
@@ -275,7 +279,7 @@ ws.onclose = () => {
   if (selfId !== -1) {
     setTimeout(() => {
       if (!connected) {
-        alert("Disconnected from server!");
+        window.showToast("Disconnected from server!", "error", 6000);
       }
     }, 1000);
   }
@@ -310,6 +314,9 @@ function initPlayerSetup() {
   const previewCtx = previewCanvas.getContext("2d");
 
   console.log("🎮 Found color swatches:", colorOptions.length);
+  
+  // Update preview when images load
+  window.onImagesLoaded = updatePreview;
 
   // Color selection
   colorOptions.forEach((option) => {
@@ -321,9 +328,21 @@ function initPlayerSetup() {
     });
   });
 
+  // Piece selection
+  const pieceOptions = document.querySelectorAll(".piece-option");
+  pieceOptions.forEach((option) => {
+    option.addEventListener("click", () => {
+      pieceOptions.forEach((o) => o.classList.remove("selected"));
+      option.classList.add("selected");
+      window.playerPiece = parseInt(option.dataset.piece);
+      updatePreview();
+    });
+  });
+
   // Name input
   nameInput.addEventListener("input", () => {
-    window.playerName = nameInput.value.trim();
+    window.playerName = filterBadWords(nameInput.value.trim().toLowerCase());
+    nameInput.value = window.playerName;
     updatePreview();
   });
 
@@ -334,36 +353,34 @@ function initPlayerSetup() {
     // Draw king piece with selected color
     previewCtx.clearRect(0, 0, 150, 150);
 
-    // Background
-    previewCtx.fillStyle = "#739552";
+    // Background checkerboard (match game board)
+    const colors = ["#4F4096", "#3A2E6F"];
+    previewCtx.fillStyle = colors[0];
     previewCtx.fillRect(0, 0, 150, 150);
 
-    // Draw king (simplified representation)
-    const color = hexToRgb(window.playerColor);
-    previewCtx.fillStyle = `rgb(${color.r}, ${color.g}, ${color.b})`;
-
-    // Draw crown shape
-    previewCtx.beginPath();
-    previewCtx.moveTo(30, 100);
-    previewCtx.lineTo(40, 60);
-    previewCtx.lineTo(55, 80);
-    previewCtx.lineTo(75, 40);
-    previewCtx.lineTo(95, 80);
-    previewCtx.lineTo(110, 60);
-    previewCtx.lineTo(120, 100);
-    previewCtx.closePath();
-    previewCtx.fill();
-
-    // Cross on top
-    previewCtx.fillRect(70, 20, 10, 30);
-    previewCtx.fillRect(60, 30, 30, 10);
+    // Draw the selected piece sprite with tint
+    const pieceType = window.playerPiece || 6;
+    if (window.imgs && window.imgs[pieceType]) {
+      // Draw the sprite
+      previewCtx.drawImage(window.imgs[pieceType], 0, 0, 150, 150);
+      
+      // Tint it with the selected color using multiply blend
+      const color = hexToRgb(window.playerColor);
+      previewCtx.globalCompositeOperation = "multiply";
+      previewCtx.globalAlpha = 0.8;
+      previewCtx.fillStyle = `rgb(${color.r}, ${color.g}, ${color.b})`;
+      previewCtx.fillRect(0, 0, 150, 150);
+      previewCtx.globalCompositeOperation = "source-over";
+      previewCtx.globalAlpha = 1;
+    }
   }
 
   // Start button
   startBtn.addEventListener("click", () => {
     if (!window.playerName) {
-      window.playerName = "Player " + Math.floor(Math.random() * 9999);
+      window.playerName = "player" + Math.floor(Math.random() * 9999);
     }
+    window.playerName = filterBadWords(window.playerName.toLowerCase());
 
     console.log("🚀 Start button clicked:", {
       playerName: window.playerName,
@@ -394,9 +411,10 @@ function hexToRgb(hex) {
 }
 
 function sendPlayerInfo() {
-  // Send player info: name (string) + color (3 bytes)
+  // Send player info: magic(2) + nameLen(1) + r(1) + g(1) + b(1) + piece(1) + padding(1) + name(variable)
   const nameBuf = new TextEncoder().encode(window.playerName);
-  const buf = new Uint8Array(6 + nameBuf.length); // +1 for 16-bit magic number
+  const bufLen = 8 + nameBuf.length;
+  const buf = new Uint8Array(bufLen);
   const u16 = new Uint16Array(buf.buffer);
 
   u16[0] = 55551; // Magic number for player info (16-bit)
@@ -406,10 +424,12 @@ function sendPlayerInfo() {
   buf[3] = color.r;
   buf[4] = color.g;
   buf[5] = color.b;
+  buf[6] = window.playerPiece || 6; // Piece type (1-6)
+  buf[7] = 0; // Padding byte to keep alignment
 
-  // Copy name starting at byte 6
+  // Copy name starting at byte 8
   for (let i = 0; i < nameBuf.length; i++) {
-    buf[6 + i] = nameBuf[i];
+    buf[8 + i] = nameBuf[i];
   }
 
   console.log("📤 Sending player info:", {

@@ -162,6 +162,18 @@ function setSquare(x, y, piece, team) {
 function move(startX, startY, finX, finY, playerId) {
   const startPiece = spatialHash.get(startX, startY);
   const endPiece = spatialHash.get(finX, finY);
+  const isCapture = endPiece.type !== 0;
+
+  // Log move in chess notation
+  const meta = playerMetadata.get(playerId);
+  const playerLabel = meta ? meta.name : `#${playerId}`;
+  const notation = moveToNotation(startPiece.type, startX, startY, finX, finY, isCapture);
+  if (isCapture) {
+    const victimPiece = PIECE_NAMES[endPiece.type] || "piece";
+    console.log(`[Move] ${playerLabel}: ${notation} (captures ${victimPiece})`);
+  } else {
+    console.log(`[Move] ${playerLabel}: ${notation}`);
+  }
 
   // Perform the move
   spatialHash.set(finX, finY, startPiece.type, playerId);
@@ -194,6 +206,10 @@ function move(startX, startY, finX, finY, playerId) {
     clients[endPiece.team] !== undefined
   ) {
     const victimId = endPiece.team;
+    const victimMeta = playerMetadata.get(victimId);
+    const victimLabel = victimMeta ? victimMeta.name : `#${victimId}`;
+    console.log(`[Kill] ${playerLabel} eliminated ${victimLabel} at ${toChessNotation(finX, finY)}`);
+
     clients[victimId].dead = true;
     clients[victimId].respawnTime = Date.now() + global.respawnTime - 500;
     teamsToNeutralize.push(victimId);
@@ -376,9 +392,6 @@ let nextAiId = 100000; // AI IDs start at 100000 to avoid collision
 function spawnAIPieces() {
   if (!AI_CONFIG.enabled) return;
 
-  // Disable AI in 64x64 mode
-  if (!GAME_CONFIG.infiniteMode) return;
-
   const players = Object.values(clients);
   if (players.length === 0) return;
 
@@ -415,8 +428,30 @@ function spawnAIPieces() {
       const pieceType = Math.floor(Math.random() * 5) + 1;
       const aiId = nextAiId++;
 
-      // Set piece on board
+      // Assign AI piece a color from the palette
+      const colorPalette = [
+        { r: 255, g: 179, b: 186 }, // #FFB3BA - pink
+        { r: 186, g: 255, b: 201 }, // #BAFFC9 - mint
+        { r: 186, g: 225, b: 255 }, // #BAE1FF - blue
+        { r: 255, g: 255, b: 186 }, // #FFFFBA - yellow
+        { r: 255, g: 186, b: 243 }, // #FFBAF3 - magenta
+        { r: 186, g: 255, b: 255 }, // #BFFFFF - cyan
+        { r: 255, g: 217, b: 186 }, // #FFD9BA - orange
+        { r: 231, g: 186, b: 255 }, // #E7BAFF - purple
+      ];
+      const aiColor = colorPalette[aiId % colorPalette.length];
+
+      // Set piece on board with AI color
       setSquare(x, y, pieceType, aiId);
+
+      // Store AI color metadata
+      playerMetadata.set(aiId, {
+        name: `AI_${aiId}`,
+        color: aiColor,
+        pieceType: pieceType,
+        kingX: x,
+        kingY: y,
+      });
 
       // Track AI piece
       aiPieces.set(aiId, {
@@ -503,8 +538,8 @@ function moveAIPieces() {
   }
 }
 
-// Run AI systems only if enabled and in infinite mode
-if (AI_CONFIG.enabled && GAME_CONFIG.infiniteMode) {
+// Run AI systems if enabled
+if (AI_CONFIG.enabled) {
   setInterval(spawnAIPieces, 2000);
   setInterval(moveAIPieces, 1000);
   console.log(
@@ -751,15 +786,16 @@ global.app = uWS
         }
       }
 
-      // Player info (name and color)
+      // Player info (name and color and piece type)
       const u16 = new Uint16Array(data);
       if (u16[0] === 55551) {
         const nameLength = u8[2];
         const r = u8[3];
         const g = u8[4];
         const b = u8[5];
+        const pieceType = u8[6] || 6; // Default to king if not provided
 
-        let name = decodeText(u8, 6, 6 + nameLength);
+        let name = decodeText(u8, 8, 8 + nameLength);
 
         // Sanitize name
         name = name.replace(/[^a-zA-Z0-9_\-\s]/g, "").substring(0, 16);
@@ -769,6 +805,7 @@ global.app = uWS
         playerMetadata.set(ws.id, {
           name: name,
           color: { r, g, b },
+          pieceType: pieceType,
           kingX: 0,
           kingY: 0,
         });
@@ -854,9 +891,10 @@ global.app = uWS
 
           console.log(`[Spawn] Player ${ws.id} (${meta.name}) ready to spawn`);
 
-          // Spawn king
+          // Spawn player's selected piece
           const spawn = findSpawnLocation();
-          setSquare(spawn.x, spawn.y, 6, ws.id);
+          const pieceType = meta.pieceType || 6; // Default to king if not set
+          setSquare(spawn.x, spawn.y, pieceType, ws.id);
 
           // Update metadata with king position
           meta.kingX = spawn.x;
@@ -866,7 +904,7 @@ global.app = uWS
           ws.dead = false;
 
           console.log(
-            `[Spawn] ✓ Player ${ws.id} (${meta.name}) spawned at ${spawn.x},${spawn.y}`,
+            `[Spawn] ✓ Player ${ws.id} (${meta.name}) spawned at ${toChessNotation(spawn.x, spawn.y)}`,
           );
 
           // Send initial viewport (spawn coords are grid coords)

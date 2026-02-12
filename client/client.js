@@ -11,7 +11,33 @@ let selectedSquareX, selectedSquareY;
 let legalMoves = [],
   draggingSelected = false,
   moveWasDrag = false;
-let curMoveCooldown = 0;
+let cooldownEndTime = 0;
+
+// Toast notification system
+const toastContainer = document.getElementById("toastContainer");
+window.showToast = (message, type = "info", duration = 4000) => {
+  const toast = document.createElement("div");
+  toast.className = `toast toast-${type}`;
+  toast.textContent = message;
+  toastContainer.appendChild(toast);
+  setTimeout(() => {
+    toast.classList.add("toast-out");
+    setTimeout(() => toast.remove(), 300);
+  }, duration);
+};
+
+// Suppress default browser error UI, use toasts instead
+window.onerror = (msg, src, line) => {
+  if (msg === "ResizeObserver loop completed with undelivered notifications.") return true;
+  const short = String(msg).slice(0, 80);
+  window.showToast(`${short}`, "error", 5000);
+  return true;
+};
+window.onunhandledrejection = (e) => {
+  e.preventDefault();
+  const msg = e.reason ? String(e.reason.message || e.reason).slice(0, 80) : "Promise rejected";
+  window.showToast(msg, "error", 5000);
+};
 
 // Camera panning state
 let isPanning = false;
@@ -35,6 +61,8 @@ window.onmousemove = (e) => {
   if (selectedSquareX !== undefined) {
     changed = true;
   }
+  // Update tooltip on mouse move (DOM only, no canvas redraw needed)
+  if (typeof updatePieceTooltip === "function") updatePieceTooltip();
 };
 
 window.oncontextmenu = (e) => {
@@ -69,7 +97,7 @@ window.onmousedown = (e) => {
       if (
         legalMoves[i][0] === squareX &&
         legalMoves[i][1] === squareY &&
-        curMoveCooldown <= 0
+        performance.now() >= cooldownEndTime
       ) {
         const buf = new Uint16Array(4);
         buf[0] = selectedSquareX;
@@ -87,7 +115,7 @@ window.onmousedown = (e) => {
         unconfirmedSY = selectedSquareY;
 
         moveWasDrag = false;
-        curMoveCooldown = window.moveCooldown || 1500;
+        cooldownEndTime = performance.now() + (window.moveCooldown || 1500);
         return;
       }
     }
@@ -138,7 +166,7 @@ window.onmouseup = (e) => {
       }
     }
 
-    if (legal === true && curMoveCooldown <= 0) {
+    if (legal === true && performance.now() >= cooldownEndTime) {
       const buf = new Uint16Array(4);
       buf[0] = selectedSquareX;
       buf[1] = selectedSquareY;
@@ -151,7 +179,7 @@ window.onmouseup = (e) => {
       unconfirmedSY = selectedSquareY;
 
       moveWasDrag = true;
-      curMoveCooldown = window.moveCooldown || 1500;
+      cooldownEndTime = performance.now() + (window.moveCooldown || 1500);
       return;
     }
   }
@@ -177,6 +205,8 @@ const srcs = ["wp", "wn", "wb", "wr", "wq", "wk"];
 const imgs = [undefined];
 let imgsToLoad = 0,
   imgsLoaded = false;
+let onImagesLoaded = null;
+
 for (let i = 0; i < srcs.length; i++) {
   imgsToLoad++;
   const img = new Image();
@@ -187,6 +217,8 @@ for (let i = 0; i < srcs.length; i++) {
     if (imgsToLoad === 0) {
       imgsLoaded = true;
       console.log("✅ All images loaded, starting render loop");
+      window.imgs = imgs;
+      if (onImagesLoaded) onImagesLoaded();
       requestAnimationFrame(render);
     }
   };
@@ -226,7 +258,6 @@ const MAX_TINTED_CACHE = 100;
 let time = performance.now();
 let lastTime = time;
 let dt = 0;
-let cooldown = -1;
 let mousePos;
 let gameOver = false,
   interpSquare = undefined,
@@ -248,8 +279,7 @@ function render() {
 
   time = performance.now();
   dt = time - lastTime;
-  if (cooldown > 0) changed = true;
-  cooldown -= dt;
+  if (cooldownEndTime > time) changed = true;
   lastTime = time;
 
   // Force rendering for first few seconds after spawn
@@ -280,13 +310,20 @@ function render() {
       moved = true;
     }
     if (window.input.zoomIn) {
+      const oldScale = camera.scale;
       camera.scale *= 1.02;
       if (camera.scale > 6) camera.scale = 6;
+      // Keep screen center fixed: camera = camera * oldScale / newScale
+      camera.x = camera.x * oldScale / camera.scale;
+      camera.y = camera.y * oldScale / camera.scale;
       moved = true;
     }
     if (window.input.zoomOut) {
+      const oldScale = camera.scale;
       camera.scale *= 0.98;
       if (camera.scale < 0.27) camera.scale = 0.27;
+      camera.x = camera.x * oldScale / camera.scale;
+      camera.y = camera.y * oldScale / camera.scale;
       moved = true;
     }
   }
@@ -391,8 +428,9 @@ function render() {
   }
 
   // Render pieces from spatial hash
+  let visiblePieces = [];
   if (window.spatialHash) {
-    const visiblePieces = window.spatialHash.queryRect(
+    visiblePieces = window.spatialHash.queryRect(
       startX,
       startY,
       endX,
@@ -512,6 +550,41 @@ function render() {
     }
   }
 
+  // Draw nameplates above king pieces
+  if (window.playerNamesMap) {
+    const kings = visiblePieces.filter((p) => p.type === 6 && p.team !== 0);
+
+    ctx.textAlign = "center";
+    ctx.textBaseline = "bottom";
+    const fontSize = Math.max(10, Math.min(14, 14 / camera.scale));
+    ctx.font = `600 ${fontSize}px "Sometype Mono", monospace`;
+
+    for (const king of kings) {
+      const info = window.playerNamesMap[king.team];
+      const label = info
+        ? info.name
+        : king.team === selfId
+          ? window.playerName || "You"
+          : `#${king.team}`;
+      const color = teamToColor(king.team);
+
+      const cx = king.x * squareSize + squareSize / 2;
+      const cy = king.y * squareSize - 22;
+
+      // Shadow for readability
+      ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+      const tw = ctx.measureText(label).width;
+      const pad = 4;
+      ctx.fillRect(cx - tw / 2 - pad, cy - fontSize - pad, tw + pad * 2, fontSize + pad * 2);
+
+      // Text
+      ctx.fillStyle = `rgb(${color.r}, ${color.g}, ${color.b})`;
+      ctx.fillText(label, cx, cy);
+    }
+    ctx.textAlign = "start";
+    ctx.textBaseline = "alphabetic";
+  }
+
   // Dragging selected piece
   if (
     selectedSquareX !== undefined &&
@@ -564,10 +637,14 @@ function render() {
       canvas.style.cursor = "";
     }
 
-    // Move cooldown indicator above player's king
-    if (curMoveCooldown > 0) {
-      curMoveCooldown -= dt;
-      const percent = Math.max(0, curMoveCooldown / window.moveCooldown);
+    // Move cooldown indicator above player's king (smooth timestamp-based)
+    const now = performance.now();
+    const cooldownTotal = window.moveCooldown || 1500;
+    const cooldownRemaining = cooldownEndTime - now;
+
+    if (cooldownRemaining > 0) {
+      changed = true; // Keep rendering during cooldown
+      const percent = cooldownRemaining / cooldownTotal;
 
       // Find player's king
       const pieces = window.spatialHash.getAllPieces();
@@ -585,17 +662,17 @@ function render() {
         const x = kingPiece.x * squareSize + (squareSize - w) / 2;
         const y = kingPiece.y * squareSize - 15;
 
-        // Background (gray - empty part)
+        // Background
         ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
         ctx.fillRect(x + w * (1 - percent), y, w * percent, h);
 
-        // Foreground (colored - filled part)
+        // Foreground (filled part)
         const color = teamToColor(selfId);
         ctx.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, 0.9)`;
         ctx.fillRect(x, y, w * (1 - percent), h);
 
         // Border
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
         ctx.lineWidth = 1;
         ctx.strokeRect(x, y, w, h);
       }
@@ -671,9 +748,11 @@ function render() {
       }
 
       if (kingX !== null && kingY !== null) {
-        document.getElementById("stat-pos").textContent = `${kingX},${kingY}`;
+        window.myKingX = kingX;
+        window.myKingY = kingY;
+        document.getElementById("stat-pos").textContent = toChessNotation(kingX, kingY);
       } else {
-        document.getElementById("stat-pos").textContent = "NOT FOUND";
+        document.getElementById("stat-pos").textContent = "---";
       }
 
       document.getElementById("stat-pieces").textContent = myPieceCount;
@@ -682,6 +761,9 @@ function render() {
     document.getElementById("stat-zoom").textContent =
       camera.scale.toFixed(2) + "x";
   }
+
+  // Update piece hover tooltip
+  updatePieceTooltip();
 }
 
 function renderMinimap() {
@@ -867,8 +949,122 @@ function canvasPos({ x, y }) {
   return { x: worldX, y: worldY };
 }
 
+// Recenter button
+document.getElementById("recenterBtn").addEventListener("click", () => {
+  if (window.myKingX !== undefined && window.myKingY !== undefined) {
+    camera.x = -(window.myKingX * squareSize + squareSize / 2);
+    camera.y = -(window.myKingY * squareSize + squareSize / 2);
+    changed = true;
+  }
+});
+
+// Piece hover tooltip
+const pieceTooltip = document.getElementById("pieceTooltip");
+let lastTooltipSquare = null;
+
+function updatePieceTooltip() {
+  if (!mouse || !window.spatialHash || selfId === -1) {
+    pieceTooltip.classList.add("hidden");
+    lastTooltipSquare = null;
+    return;
+  }
+
+  const wp = canvasPos(mouse);
+  const sx = Math.floor(wp.x / squareSize);
+  const sy = Math.floor(wp.y / squareSize);
+  const key = `${sx},${sy}`;
+
+  const piece = window.spatialHash.get(sx, sy);
+  if (piece.type === 0) {
+    pieceTooltip.classList.add("hidden");
+    lastTooltipSquare = null;
+    return;
+  }
+
+  // Only rebuild HTML when hovering a new square
+  if (lastTooltipSquare !== key) {
+    lastTooltipSquare = key;
+    const notation = toChessNotation(sx, sy);
+    const pieceName = PIECE_NAMES[piece.type] || "Unknown";
+    const color = teamToColor(piece.team);
+    const colorHex = `rgb(${color.r},${color.g},${color.b})`;
+
+    let ownerName = "Neutral";
+    if (piece.team !== 0) {
+      if (piece.team === selfId) {
+        ownerName = window.playerName || "You";
+      } else {
+        // Check leaderboard entries for name
+        const lbEntry = document.querySelector(`[id*="player-container-${piece.team}"]`);
+        if (lbEntry) {
+          const nameEl = lbEntry.querySelector(".player-name");
+          ownerName = nameEl ? nameEl.textContent.split(" [")[0] : `Player ${piece.team}`;
+        } else {
+          ownerName = `Player ${piece.team}`;
+        }
+      }
+    }
+
+    let html = `<div class="tooltip-title">${pieceName} @ ${notation}</div>`;
+    if (piece.team !== 0) {
+      html += `<div class="tooltip-row"><span class="tooltip-label">OWNER:</span><span><span class="tooltip-color" style="background:${colorHex}"></span>${ownerName}</span></div>`;
+    } else {
+      html += `<div class="tooltip-row"><span class="tooltip-label">STATUS:</span><span>Neutral</span></div>`;
+    }
+    html += `<div class="tooltip-row"><span class="tooltip-label">SQUARE:</span><span>${notation}</span></div>`;
+    html += `<div class="tooltip-row"><span class="tooltip-label">GRID:</span><span>${sx}, ${sy}</span></div>`;
+
+    pieceTooltip.innerHTML = html;
+  }
+
+  // Position tooltip near mouse
+  const offsetX = 16;
+  const offsetY = 16;
+  let tx = mouse.clientX + offsetX;
+  let ty = mouse.clientY + offsetY;
+
+  // Keep tooltip on screen
+  const tw = pieceTooltip.offsetWidth || 150;
+  const th = pieceTooltip.offsetHeight || 80;
+  if (tx + tw > window.innerWidth) tx = mouse.clientX - tw - 8;
+  if (ty + th > window.innerHeight) ty = mouse.clientY - th - 8;
+
+  pieceTooltip.style.left = tx + "px";
+  pieceTooltip.style.top = ty + "px";
+  pieceTooltip.classList.remove("hidden");
+}
+
 // MOBILE - Removed (desktop only)
 
 function interpolate(s, e, t) {
   return (1 - t) * s + e * t;
 }
+
+// Collapse button functionality
+document.addEventListener("DOMContentLoaded", () => {
+  const collapseButtons = document.querySelectorAll(".collapse-btn");
+  
+  collapseButtons.forEach(button => {
+    button.addEventListener("click", () => {
+      const targetId = button.getAttribute("data-target");
+      const target = document.getElementById(targetId);
+      
+      if (target) {
+        // Find the parent panel to collapse
+        let panel = target.closest(".stats-panel") || target.closest(".leaderboard-div");
+        
+        if (panel) {
+          const isCollapsed = panel.classList.contains("collapsed");
+          
+          if (isCollapsed) {
+            panel.classList.remove("collapsed");
+            button.textContent = "−";
+          } else {
+            panel.classList.add("collapsed");
+            button.textContent = "+";
+          }
+        }
+      }
+    });
+  });
+});

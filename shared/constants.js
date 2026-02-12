@@ -301,9 +301,54 @@ const moveMap = [
     },
 ];
 
+// Chess notation for 64x64 board
+// Columns: a-z (0-25), 2a-2z (26-51), 3a-3l (52-63)
+// Rows: 64 (y=0, top) down to 1 (y=63, bottom) — chess convention
+globalThis.colToNotation = (col) => {
+    const letter = String.fromCharCode(97 + (col % 26));
+    const prefix = Math.floor(col / 26);
+    return prefix === 0 ? letter : `${prefix + 1}${letter}`;
+};
+
+globalThis.rowToNotation = (row) => {
+    return String(64 - row);
+};
+
+globalThis.toChessNotation = (x, y) => {
+    return colToNotation(x) + rowToNotation(y);
+};
+
+globalThis.PIECE_NAMES = ['', 'Pawn', 'Knight', 'Bishop', 'Rook', 'Queen', 'King'];
+globalThis.PIECE_SYMBOLS = ['', '', 'N', 'B', 'R', 'Q', 'K'];
+
+globalThis.moveToNotation = (pieceType, fromX, fromY, toX, toY, isCapture) => {
+    const symbol = PIECE_SYMBOLS[pieceType] || '';
+    const from = toChessNotation(fromX, fromY);
+    const to = toChessNotation(toX, toY);
+    const cap = isCapture ? 'x' : '-';
+    return `${symbol}${from}${cap}${to}`;
+};
+
 // Utility: Array random
 globalThis.Array.prototype.random = function() {
     return this[Math.floor(Math.random() * this.length)];
+};
+
+// Bad word filter
+const BAD_WORDS = [
+  'ass', 'bitch', 'damn', 'fuck', 'shit', 'crap', 'piss', 'cock', 'dick',
+  'pussy', 'whore', 'slut', 'bastard', 'asshole', 'douchebag', 'motherfucker',
+  'nigger', 'nigga', 'faggot', 'retard', 'kys', 'kms', 'kill yourself'
+];
+
+globalThis.filterBadWords = (text) => {
+  if (!text) return text;
+  let filtered = text.toLowerCase();
+  for (const word of BAD_WORDS) {
+    const regex = new RegExp(`\\b${word}\\b`, 'gi');
+    filtered = filtered.replace(regex, '*'.repeat(word.length));
+  }
+  return filtered;
 };
 
 // Export for Node.js
