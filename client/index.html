@@ -15,7 +15,7 @@
     />
     <link href="/client/style.css" rel="stylesheet" type="text/css" />
 
-    <!-- Turnstile captcha disabled -->
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
   </head>
 
   <body>
@@ -27,8 +27,10 @@
           <p class="subtitle">MASSIVELY MULTIPLAYER CHESS.</p>
         </div>
         <div
-          class="g-recaptcha"
-          data-sitekey="6Lf3fAQrAAAAAHA16QHwE18_MZU9Vc3Iex6jVW2G"
+          class="cf-turnstile"
+          data-sitekey="__TURNSTILE_SITE_KEY__"
+          data-theme="dark"
+          data-callback="onTurnstileSuccess"
         ></div>
       </div>
     </div>

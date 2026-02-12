@@ -2,6 +2,7 @@ let ws = null;
 let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 8;
 const BASE_RECONNECT_DELAY = 1000; // 1s, doubles each attempt
+let turnstileToken = null;
 
 function connectWebSocket() {
   ws = new WebSocket(HOST);
@@ -71,6 +72,21 @@ window.aiCooldowns = new Map();
 
 // Active chat bubbles
 const activeChatBubbles = new Map(); // playerId -> { text, time, element }
+
+// Turnstile callback - called when captcha is completed
+window.onTurnstileSuccess = (token) => {
+  console.log("✓ Turnstile captcha completed");
+  turnstileToken = token;
+  
+  // Send token to server for verification
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    const tokenBytes = new TextEncoder().encode(token);
+    const buf = new Uint8Array(1 + tokenBytes.length);
+    buf[0] = tokenBytes.length;
+    buf.set(tokenBytes, 1);
+    ws.send(buf);
+  }
+};
 
 function setupWebSocketHandlers() {
 ws.addEventListener("message", function (data) {

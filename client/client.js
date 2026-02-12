@@ -3,6 +3,27 @@ const isDev = location.hostname === "localhost" || location.hostname === "127.0.
 const HOST = isDev 
   ? location.origin.replace(/^http/, "ws")
   : "wss://infinichess.onrender.com";
+
+// Inject Turnstile sitekey from server config
+(async () => {
+  try {
+    const response = await fetch("/config");
+    const config = await response.json();
+    if (config.turnstileSiteKey) {
+      const turnstileDiv = document.querySelector(".cf-turnstile");
+      if (turnstileDiv) {
+        turnstileDiv.setAttribute("data-sitekey", config.turnstileSiteKey);
+        // Reload Turnstile widget if it's already loaded
+        if (window.turnstile) {
+          window.turnstile.render(".cf-turnstile");
+        }
+      }
+    }
+  } catch (error) {
+    console.error("Failed to load Turnstile config:", error);
+  }
+})();
+
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 
