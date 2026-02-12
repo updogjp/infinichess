@@ -14,18 +14,7 @@
     />
     <link href="/client/style.css" rel="stylesheet" type="text/css" />
 
-    <script>
-      // Only load Turnstile in production (not localhost)
-      if (
-        window.location.hostname !== "localhost" &&
-        window.location.hostname !== "127.0.0.1"
-      ) {
-        const script = document.createElement("script");
-        script.src =
-          "https://challenges.cloudflare.com/turnstile/v0/api.js?compat=recaptcha";
-        document.head.appendChild(script);
-      }
-    </script>
+    <!-- Turnstile captcha disabled -->
   </head>
 
   <body>

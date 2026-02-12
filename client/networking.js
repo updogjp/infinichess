@@ -718,18 +718,10 @@ window.updateChatBubbles = function () {
   });
 };
 
-// Check if dev mode (captcha bypass)
-const isDev =
-  window.location.hostname === "localhost" ||
-  window.location.hostname === "127.0.0.1";
-
-if (isDev) {
-  console.log("🔧 DEV MODE: Bypassing captcha, showing player setup");
-
-  // Wait for WebSocket to connect, then show player setup
+// Captcha disabled - go straight to player setup
+{
   const checkConnection = () => {
     if (ws.readyState === WebSocket.OPEN) {
-      // Just show player setup, don't send anything yet
       document.getElementById("fullscreenDiv").classList.add("hidden");
       document.getElementById("playerSetupDiv").classList.remove("hidden");
       initPlayerSetup();
@@ -739,44 +731,6 @@ if (isDev) {
   };
 
   checkConnection();
-} else {
-  // Production: Use captcha
-  if (typeof grecaptcha !== "undefined") {
-    grecaptcha.ready(() => {
-      grecaptcha.render(document.querySelector(".g-recaptcha"), {
-        sitekey: "0x4AAAAAABDl4Wthv8-PLPyU",
-        callback: (captchaResponse) => {
-          captchaCompleted = true;
-
-          // Wait for WebSocket to be open before sending
-          const sendCaptcha = () => {
-            if (ws.readyState === WebSocket.OPEN) {
-              const buf = new Uint8Array(captchaResponse.length);
-              encodeAtPosition(captchaResponse, buf, 0);
-              ws.send(buf);
-
-              document.getElementById("fullscreenDiv").classList.add("hidden");
-
-              // Show player setup modal
-              document
-                .getElementById("playerSetupDiv")
-                .classList.remove("hidden");
-              initPlayerSetup();
-            } else {
-              // Retry after 100ms if not open yet
-              setTimeout(sendCaptcha, 100);
-            }
-          };
-
-          sendCaptcha();
-        },
-      });
-    });
-  } else {
-    console.error(
-      "❌ Turnstile not loaded - check if you're running in production mode",
-    );
-  }
 }
 
 const encoder = new TextEncoder();

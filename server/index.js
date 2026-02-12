@@ -30,7 +30,7 @@ function simpleColorName(num) {
   return colorNames[index] + num.toString().slice(-3);
 }
 
-const captchaSecretKey = "[captcha key]";
+const captchaSecretKey = process.env.TURNSTILE_SECRET_KEY || "[captcha key]";
 
 function serverIp() {
   const nets = networkInterfaces();
@@ -949,45 +949,7 @@ global.app = uWS
               });
             }
 
-            // Bypass captcha in development mode - but still wait for player setup
-            if (isDev) {
-              // Don't set verified=true yet, let the spawn logic handle it
-              // Just skip captcha verification and continue to spawn check
-            } else {
-              // Captcha verification (production only)
-              const captchaKey = decodeText(u8);
-              if (usedCaptchaKeys[captchaKey] !== undefined) {
-                if (!ws.closed) ws.close();
-                return;
-              }
-
-              try {
-                const response = await fetch(
-                  "https://challenges.cloudflare.com/turnstile/v0/siteverify",
-                  {
-                    method: "POST",
-                    headers: {
-                      "Content-Type": "application/x-www-form-urlencoded",
-                    },
-                    body: `secret=${captchaSecretKey}&response=${captchaKey}`,
-                  },
-                );
-
-                const result = await response.json();
-
-                if (result.success) {
-                  ws.verified = true;
-                  usedCaptchaKeys[captchaKey] = Date.now();
-                } else {
-                  if (!ws.closed) ws.close();
-                  return;
-                }
-              } catch (e) {
-                console.error("Captcha verification failed:", e);
-                if (!ws.closed) ws.close();
-                return;
-              }
-            }
+            // Captcha disabled - auto-verify all connections
           }
 
           if (Date.now() < ws.respawnTime) return;
