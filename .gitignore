@@ -128,3 +128,6 @@ build/
 # Debug
 debug/
 .debug
+
+# Documentation (development notes)
+docs/
