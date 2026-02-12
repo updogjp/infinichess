@@ -2,7 +2,7 @@
 const isDev = location.hostname === "localhost" || location.hostname === "127.0.0.1";
 const HOST = isDev 
   ? location.origin.replace(/^http/, "ws")
-  : "wss://infinichess.onrender.com";
+  : "wss://api.infinichess.io";
 
 // Inject Turnstile sitekey from server config
 (async () => {
