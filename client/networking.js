@@ -75,7 +75,7 @@ const activeChatBubbles = new Map(); // playerId -> { text, time, element }
 
 // Turnstile callback - called when captcha is completed
 window.onTurnstileSuccess = (token) => {
-  console.log("✓ Turnstile captcha completed");
+  console.log("✓ Turnstile captcha completed, token:", token.substring(0, 20) + "...");
   turnstileToken = token;
   
   // Send token to server for verification
@@ -84,6 +84,7 @@ window.onTurnstileSuccess = (token) => {
     const buf = new Uint8Array(1 + tokenBytes.length);
     buf[0] = tokenBytes.length;
     buf.set(tokenBytes, 1);
+    console.log("📤 Sending Turnstile token to server, buffer length:", buf.length);
     ws.send(buf);
     
     // Show player setup modal after captcha is verified
@@ -93,7 +94,14 @@ window.onTurnstileSuccess = (token) => {
       document.getElementById("playerSetupDiv").classList.remove("hidden");
       initPlayerSetup();
     }, 500);
+  } else {
+    console.error("❌ WebSocket not open, cannot send token. State:", ws?.readyState);
   }
+};
+
+// Debug: Log when Turnstile script loads
+window.onTurnstileLoad = () => {
+  console.log("✓ Turnstile script loaded, window.turnstile available:", !!window.turnstile);
 };
 
 function setupWebSocketHandlers() {
@@ -821,12 +829,32 @@ window.updateChatBubbles = function () {
   });
 };
 
-// Wait for WebSocket connection before showing captcha
+// Wait for WebSocket connection and validate Turnstile setup
 {
   const checkConnection = () => {
     if (ws.readyState === WebSocket.OPEN) {
-      console.log("✓ WebSocket connected, captcha screen ready");
-      // Captcha screen is already visible, waiting for user to complete it
+      console.log("✓ WebSocket connected, validating Turnstile...");
+      
+      // Check if Turnstile widget is properly configured
+      const turnstileWidget = document.getElementById("turnstileWidget");
+      const sitekey = turnstileWidget?.getAttribute("data-sitekey");
+      
+      if (!sitekey || sitekey === "__TURNSTILE_SITE_KEY__") {
+        console.error("❌ Turnstile sitekey not configured!");
+        const errorDiv = document.getElementById("turnstileError");
+        if (errorDiv) {
+          errorDiv.classList.remove("hidden");
+        }
+        // In development, auto-verify without captcha
+        if (window.isDev) {
+          console.log("🔧 DEV MODE: Auto-verifying without captcha");
+          setTimeout(() => {
+            window.onTurnstileSuccess("dev-token");
+          }, 500);
+        }
+      } else {
+        console.log("✓ Turnstile sitekey configured:", sitekey.substring(0, 10) + "...");
+      }
     } else {
       console.log(`⏳ Waiting for WebSocket... state=${ws.readyState}`);
       setTimeout(checkConnection, 100);

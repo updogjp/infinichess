@@ -1516,7 +1516,15 @@ app.get("/", (res, req) => {
     res.writeHeader("Expires", "0");
   }
 
-  res.end(fsSync.readFileSync("client/index.html"));
+  let html = fsSync.readFileSync("client/index.html", "utf-8");
+  const turnstileSiteKey = process.env.TURNSTILE_SITE_KEY || "";
+  if (!turnstileSiteKey) {
+    console.warn("⚠️ TURNSTILE_SITE_KEY environment variable not set!");
+  } else {
+    console.log("✓ Injecting Turnstile sitekey:", turnstileSiteKey.substring(0, 10) + "...");
+  }
+  html = html.replace("__TURNSTILE_SITE_KEY__", turnstileSiteKey);
+  res.end(html);
 });
 
 app.get("/config", (res, req) => {

@@ -27,11 +27,15 @@
           <p class="subtitle">MASSIVELY MULTIPLAYER CHESS.</p>
         </div>
         <div
+          id="turnstileWidget"
           class="cf-turnstile"
           data-sitekey="__TURNSTILE_SITE_KEY__"
           data-theme="dark"
           data-callback="onTurnstileSuccess"
         ></div>
+        <div id="turnstileError" class="hidden" style="color: #ff6b6b; margin-top: 10px; font-size: 12px;">
+          Captcha not configured. Contact admin.
+        </div>
       </div>
     </div>
 
