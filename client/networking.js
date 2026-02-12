@@ -52,19 +52,15 @@ ws.addEventListener("message", function (data) {
       }
     }
 
-    // Center camera on player's king
+    // Center camera on player's king (center of the square)
     if (myKingX !== null && myKingY !== null) {
-      camera.x = -myKingX * squareSize;
-      camera.y = -myKingY * squareSize;
-      console.log(`📍 Camera centered on king at ${myKingX},${myKingY}`);
-    } else {
-      console.warn("⚠️ No king found for player", selfId);
+      camera.x = -(myKingX * squareSize + squareSize / 2);
+      camera.y = -(myKingY * squareSize + squareSize / 2);
     }
 
     // Show chat UI and leaderboard after first sync
     const chatContainer = document.querySelector(".chatContainer");
     chatContainer.classList.remove("hidden");
-    console.log("✅ UI shown");
 
     changed = true;
     return;
@@ -140,8 +136,8 @@ ws.addEventListener("message", function (data) {
 
     // Set up interpolation for smooth movement
     if (playerId !== selfId || !moveWasDrag) {
-      if (!interpolatingPieces[finX]) interpolatingPieces[finX] = {};
-      interpolatingPieces[finX][finY] = [startX, startY];
+      const interpKey = `${finX},${finY}`;
+      interpolatingPieces[interpKey] = [startX, startY];
     }
 
     // Clear selection if our piece moved
@@ -224,7 +220,7 @@ ws.addEventListener("message", function (data) {
     let i = 2; // Start after magic number and online count
     const arr = [];
 
-    while (i < msg.length - 1) {
+    while (i + 2 < msg.length) {
       const id = msg[i++];
       const kills = msg[i++];
       const len = msg[i++];
@@ -291,8 +287,9 @@ setInterval(() => {
   if (connected && camera) {
     const buf = new Int16Array(4);
     buf[0] = 55552; // Magic number for camera update
-    buf[1] = Math.floor(camera.x);
-    buf[2] = Math.floor(camera.y);
+    // Send grid coordinates (camera is negative world pixel pos)
+    buf[1] = Math.floor(-camera.x / squareSize);
+    buf[2] = Math.floor(-camera.y / squareSize);
     buf[3] = Math.floor(camera.scale * 100); // Scale as integer
     send(buf.buffer);
   }
@@ -494,29 +491,22 @@ window.updateChatBubbles = function () {
       }
     }
 
-    // Calculate screen position
-    const t = ctx.getTransform();
-    ctx.translate(canvas.w / 2, canvas.h / 2);
-    ctx.scale(camera.scale, camera.scale);
-    ctx.translate(camera.x, camera.y);
-
-    const screenPos = canvasPos({
-      x: data.pieceX * squareSize + squareSize / 2,
-      y: data.pieceY * squareSize - 20,
-    });
-
-    ctx.setTransform(t);
+    // Calculate screen position from world coords using camera transform
+    const worldX = data.pieceX * squareSize + squareSize / 2;
+    const worldY = data.pieceY * squareSize - 20;
+    const screenX = (worldX + camera.x) * camera.scale + canvas.w / 2;
+    const screenY = (worldY + camera.y) * camera.scale + canvas.h / 2;
 
     // Update bubble position
-    data.element.style.left = screenPos.x + "px";
-    data.element.style.top = screenPos.y + "px";
+    data.element.style.left = screenX + "px";
+    data.element.style.top = screenY + "px";
 
     // Check if off-screen
     if (
-      screenPos.x < 0 ||
-      screenPos.x > canvas.w ||
-      screenPos.y < 0 ||
-      screenPos.y > canvas.h
+      screenX < -100 ||
+      screenX > canvas.w + 100 ||
+      screenY < -100 ||
+      screenY > canvas.h + 100
     ) {
       data.element.style.display = "none";
     } else {

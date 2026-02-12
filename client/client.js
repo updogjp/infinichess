@@ -60,19 +60,9 @@ window.onmousedown = (e) => {
   if (e.button !== 0) return;
 
   mousePos = canvasPos({ x: e.x, y: e.y });
-  console.log("🖱️ Mouse down at screen:", e.x, e.y, "world:", mousePos);
 
   const squareX = Math.floor(mousePos.x / squareSize);
   const squareY = Math.floor(mousePos.y / squareSize);
-
-  console.log(
-    "🎯 Clicked square:",
-    squareX,
-    squareY,
-    "Selected:",
-    selectedSquareX,
-    selectedSquareY,
-  );
 
   if (legalMoves !== undefined && selectedSquareX !== undefined) {
     for (let i = 0; i < legalMoves.length; i++) {
@@ -81,14 +71,6 @@ window.onmousedown = (e) => {
         legalMoves[i][1] === squareY &&
         curMoveCooldown <= 0
       ) {
-        console.log(
-          "✅ Moving piece from",
-          selectedSquareX,
-          selectedSquareY,
-          "to",
-          squareX,
-          squareY,
-        );
         const buf = new Uint16Array(4);
         buf[0] = selectedSquareX;
         buf[1] = selectedSquareY;
@@ -116,17 +98,6 @@ window.onmousedown = (e) => {
   // Check if clicking on own piece
   if (window.spatialHash) {
     const piece = window.spatialHash.get(squareX, squareY);
-    console.log(
-      "🔍 Checking square:",
-      squareX,
-      squareY,
-      "Piece type:",
-      piece.type,
-      "Piece team:",
-      piece.team,
-      "Self ID:",
-      selfId,
-    );
 
     if (piece.type !== 0 && piece.team === selfId) {
       selectedSquareX = squareX;
@@ -139,28 +110,9 @@ window.onmousedown = (e) => {
         selfId,
       );
 
-      console.log(
-        "✓ Selected piece at",
-        squareX,
-        squareY,
-        "Legal moves:",
-        legalMoves.length,
-      );
       draggingSelected = true;
       changed = true;
-    } else if (piece.type !== 0) {
-      console.log(
-        "❌ Can't select: not your piece (team:",
-        piece.team,
-        "vs yours:",
-        selfId,
-        ")",
-      );
-    } else {
-      console.log("❌ Can't select: empty square");
     }
-  } else {
-    console.log("⚠️ window.spatialHash not available!");
   }
 };
 
@@ -187,14 +139,6 @@ window.onmouseup = (e) => {
     }
 
     if (legal === true && curMoveCooldown <= 0) {
-      console.log(
-        "✅ Drag move from",
-        selectedSquareX,
-        selectedSquareY,
-        "to",
-        newX,
-        newY,
-      );
       const buf = new Uint16Array(4);
       buf[0] = selectedSquareX;
       buf[1] = selectedSquareY;
@@ -209,8 +153,6 @@ window.onmouseup = (e) => {
       moveWasDrag = true;
       curMoveCooldown = window.moveCooldown || 1500;
       return;
-    } else if (!legal && legalMoves.length > 0) {
-      console.log("❌ Illegal move to", newX, newY);
     }
   }
   draggingSelected = false;
@@ -294,9 +236,8 @@ let gameOver = false,
 let minimapCanvas = document.getElementById("minimapCanvas");
 let cx = minimapCanvas.getContext("2d");
 
-// Emergency debug mode - force render for first 10 seconds
-let debugStartTime = performance.now();
-let debugMode = true;
+// Track first render for initial camera setup
+let firstRenderDone = false;
 
 function render() {
   canvas.w = canvas.width;
@@ -311,13 +252,10 @@ function render() {
   cooldown -= dt;
   lastTime = time;
 
-  // Force rendering for first 10 seconds to debug spawn issues
-  if (time - debugStartTime < 10000) {
+  // Force rendering for first few seconds after spawn
+  if (!firstRenderDone && selfId !== -1) {
     changed = true;
-    if (time - debugStartTime > 9000 && debugMode) {
-      debugMode = false;
-      console.log("🛑 Debug mode ending, switching to normal render mode");
-    }
+    firstRenderDone = true;
   }
 
   // Handle camera movement
@@ -357,16 +295,22 @@ function render() {
   if (!window.infiniteMode) {
     const viewWidth = canvas.w / camera.scale;
     const viewHeight = canvas.h / camera.scale;
-    const boardSize = 64 * squareSize;
+    const boardPixels = 64 * squareSize;
 
-    // Clamp camera position to keep board in view
-    const minX = -boardSize / 2 + viewWidth / 2;
-    const maxX = boardSize / 2 - viewWidth / 2;
-    const minY = -boardSize / 2 + viewHeight / 2;
-    const maxY = boardSize / 2 - viewHeight / 2;
+    // Camera is negated world position, so board spans camera values [0, -boardPixels]
+    // Allow some margin so you can see the edges
+    const margin = viewWidth * 0.1;
+    const maxX = margin;
+    const minX = -boardPixels - margin + viewWidth;
+    const maxY = margin;
+    const minY = -boardPixels - margin + viewHeight;
 
-    camera.x = Math.max(minX, Math.min(maxX, camera.x));
-    camera.y = Math.max(minY, Math.min(maxY, camera.y));
+    if (minX < maxX) {
+      camera.x = Math.max(minX, Math.min(maxX, camera.x));
+    }
+    if (minY < maxY) {
+      camera.y = Math.max(minY, Math.min(maxY, camera.y));
+    }
   }
 
   if (moved) changed = true;
@@ -422,16 +366,9 @@ function render() {
 
   // Draw board border in 64x64 mode
   if (!window.infiniteMode) {
-    ctx.strokeStyle = "#FF0000";
-    ctx.lineWidth = 8 / camera.scale;
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";
+    ctx.lineWidth = 2 / camera.scale;
     ctx.strokeRect(0, 0, 64 * squareSize, 64 * squareSize);
-
-    // Add label
-    ctx.fillStyle = "#FF0000";
-    ctx.font = `${32 / camera.scale}px monospace`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText("64x64 DEBUG MODE", 32 * squareSize, -20 / camera.scale);
   }
 
   // Render legal moves
@@ -462,30 +399,8 @@ function render() {
       endY,
     );
 
-    // Debug: Log rendering info first time
-    if (time < 5000 && visiblePieces.length > 0) {
-      console.log("🎨 Rendering pieces:", {
-        visibleCount: visiblePieces.length,
-        selfId,
-        camera,
-        viewBounds: { startX, startY, endX, endY },
-      });
-    }
-
     for (const piece of visiblePieces) {
       if (piece.type === 0) continue;
-
-      // Debug: Log first player piece found
-      if (piece.team === selfId && time < 5000) {
-        console.log("👑 Found my piece:", {
-          type: piece.type,
-          x: piece.x,
-          y: piece.y,
-          team: piece.team,
-          renderX: piece.x * squareSize,
-          renderY: piece.y * squareSize,
-        });
-      }
 
       if (piece.team === 0) {
         // Neutral piece - draw white sprite with fade-in
@@ -728,48 +643,6 @@ function render() {
     window.updateChatBubbles();
   }
 
-  // Debug overlay for first 10 seconds
-  if (time - debugStartTime < 10000) {
-    ctx.save();
-    ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset transform
-
-    ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
-    ctx.fillRect(10, canvas.h - 150, 300, 140);
-
-    ctx.fillStyle = "#00ff00";
-    ctx.font = "12px monospace";
-    ctx.textAlign = "left";
-
-    let debugY = canvas.h - 135;
-    ctx.fillText("🐛 DEBUG MODE (10s)", 20, debugY);
-    debugY += 20;
-    ctx.fillText(`selfId: ${selfId}`, 20, debugY);
-    debugY += 15;
-    ctx.fillText(
-      `camera: ${camera.x.toFixed(0)}, ${camera.y.toFixed(0)}`,
-      20,
-      debugY,
-    );
-    debugY += 15;
-    ctx.fillText(`scale: ${camera.scale.toFixed(2)}`, 20, debugY);
-    debugY += 15;
-    ctx.fillText(
-      `pieces visible: ${window.spatialHash ? window.spatialHash.getAllPieces().length : 0}`,
-      20,
-      debugY,
-    );
-    debugY += 15;
-    ctx.fillText(
-      `my pieces: ${window.spatialHash ? window.spatialHash.getAllPieces().filter((p) => p.team === selfId).length : 0}`,
-      20,
-      debugY,
-    );
-    debugY += 15;
-    ctx.fillText(`changed: ${changed}`, 20, debugY);
-
-    ctx.restore();
-  }
-
   // Update statistics panel
   if (selfId !== -1) {
     document.getElementById("stat-name").textContent =
@@ -804,15 +677,6 @@ function render() {
       }
 
       document.getElementById("stat-pieces").textContent = myPieceCount;
-
-      // Debug: Log if no pieces found
-      if (myPieceCount === 0 && time < 5000) {
-        console.warn("⚠️ No player pieces found!", {
-          selfId,
-          totalPieces: pieces.length,
-          allPieces: pieces.slice(0, 5),
-        });
-      }
     }
 
     document.getElementById("stat-zoom").textContent =
@@ -987,28 +851,20 @@ function generateTintedImages(color) {
   tintedImgs.set(`${color.r}_${color.g}_${color.b}`, arr);
 }
 
-// Page position to position on the canvas
+// Screen position to world position using camera state
+// Works both inside and outside the render loop
 function canvasPos({ x, y }) {
   const canvasDimensions = canvas.getBoundingClientRect();
-  x = ((x - canvasDimensions.x) / canvasDimensions.width) * canvas.width;
-  y = ((y - canvasDimensions.y) / canvasDimensions.height) * canvas.height;
+  // Convert page coords to canvas pixel coords
+  const cx = ((x - canvasDimensions.x) / canvasDimensions.width) * canvas.width;
+  const cy = ((y - canvasDimensions.y) / canvasDimensions.height) * canvas.height;
 
-  const { a, b, c, d, e, f } = ctx.getTransform();
+  // Invert the camera transform: translate(w/2,h/2) -> scale -> translate(cam)
+  // World = (screen - w/2) / scale - camera
+  const worldX = (cx - canvas.width / 2) / camera.scale - camera.x;
+  const worldY = (cy - canvas.height / 2) / camera.scale - camera.y;
 
-  const denom1 = a * d - c * b;
-  const denom2 = -denom1;
-
-  const invA = d / denom1;
-  const invC = c / denom2;
-  const invE = (e * d - c * f) / denom2;
-  const invB = b / denom2;
-  const invD = a / denom1;
-  const invF = (e * b - a * f) / denom1;
-
-  return {
-    x: invA * x + invC * y + invE,
-    y: invB * x + invD * y + invF,
-  };
+  return { x: worldX, y: worldY };
 }
 
 // MOBILE - Removed (desktop only)

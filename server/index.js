@@ -90,22 +90,20 @@ let leaderboard = new Map();
 
 function sendLeaderboard() {
   const leaderboardData = [];
-  let bufLen = 2; // Start at 2 to include magic number + online count
+  // Count in Uint16 slots: 2 for header (magic + onlineCount)
+  let u16Len = 2;
 
   for (const [playerId, kills] of leaderboard) {
     const metadata = playerMetadata.get(playerId);
     const name = metadata ? metadata.name : teamToName(playerId);
-    const nameLen = name.length;
+    const nameBytes = new TextEncoder().encode(name);
 
-    leaderboardData.push({ id: playerId, kills, name, nameLen });
-    let add = nameLen;
-    if (add % 2 === 1) add++;
-    bufLen += add + 6;
+    leaderboardData.push({ id: playerId, kills, name, nameBytes });
+    // 3 Uint16 slots for id, kills, nameByteLen + ceil(nameByteLen/2) for name data
+    u16Len += 3 + Math.ceil(nameBytes.length / 2);
   }
 
-  if (bufLen % 2 === 1) bufLen++;
-
-  const buf = new Uint8Array(bufLen);
+  const buf = new Uint8Array(u16Len * 2);
   const u16 = new Uint16Array(buf.buffer);
   u16[0] = 48027;
   u16[1] = Object.keys(clients).length; // Online player count
@@ -114,9 +112,12 @@ function sendLeaderboard() {
   for (const d of leaderboardData) {
     u16[i++] = d.id;
     u16[i++] = d.kills;
-    u16[i++] = d.nameLen;
-    encodeAtPosition(d.name, buf, i * 2);
-    i += Math.ceil(d.nameLen / 2);
+    u16[i++] = d.nameBytes.length; // Store byte length, not char length
+    // Copy name bytes into buffer at byte offset i*2
+    for (let j = 0; j < d.nameBytes.length; j++) {
+      buf[i * 2 + j] = d.nameBytes[j];
+    }
+    i += Math.ceil(d.nameBytes.length / 2);
   }
 
   return buf;
@@ -206,13 +207,14 @@ function move(startX, startY, finX, finY, playerId) {
   }
 }
 
-// Broadcast to players whose viewport contains a point
+// Broadcast to players whose viewport contains a point (x,y in grid coords)
 function broadcastToViewport(x, y, message) {
-  const VIEWPORT_RADIUS = 3000; // pixels (in world coordinates)
+  const VIEWPORT_RADIUS = 50; // grid squares
 
   for (const client of Object.values(clients)) {
     if (!client.camera || !client.verified) continue;
 
+    // Camera stores grid coords directly
     const dx = x - client.camera.x;
     const dy = y - client.camera.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
@@ -363,7 +365,7 @@ function generateId() {
 
 const decoder = new TextDecoder();
 function decodeText(u8array, startPos = 0, endPos = Infinity) {
-  return decoder.decode(u8array).slice(startPos, endPos);
+  return decoder.decode(u8array.slice(startPos, endPos));
 }
 
 // AI player system - spawns intelligent pieces near online players
@@ -492,7 +494,7 @@ function moveAIPieces() {
     }
 
     // Execute move
-    move(aiId, aiPiece.x, aiPiece.y, newX, newY);
+    move(aiPiece.x, aiPiece.y, newX, newY, aiId);
 
     // Update AI piece position
     aiPiece.x = newX;
@@ -730,10 +732,11 @@ global.app = uWS
     message: (ws, data) => {
       const u8 = new Uint8Array(data);
 
-      // Camera position update (new message type)
+      // Camera position update (client sends grid coordinates)
       if (data.byteLength === 12) {
         const decoded = new Int16Array(data);
         if (decoded[0] === 55552) {
+          // Client sends grid coords directly
           ws.camera.x = decoded[1];
           ws.camera.y = decoded[2];
           ws.camera.scale = decoded[3] / 100; // Scale stored as integer * 100
@@ -866,8 +869,9 @@ global.app = uWS
             `[Spawn] ✓ Player ${ws.id} (${meta.name}) spawned at ${spawn.x},${spawn.y}`,
           );
 
-          // Send initial viewport
+          // Send initial viewport (spawn coords are grid coords)
           sendViewportState(ws, spawn.x, spawn.y);
+          // Store camera as grid coords to match client update format
           ws.camera.x = spawn.x;
           ws.camera.y = spawn.y;
 
