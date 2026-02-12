@@ -1,4 +1,4 @@
-import uWS from "uWebSockets.js";
+import uWS from "uwebsockets.js";
 import fs from "fs/promises";
 import fsSync from "fs";
 import "../shared/constants.js";
