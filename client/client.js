@@ -1487,14 +1487,9 @@ function updatePieceTooltip() {
       if (piece.team === selfId) {
         ownerName = window.playerName || "You";
       } else {
-        // Check leaderboard entries for name
-        const lbEntry = document.querySelector(`[id*="player-container-${piece.team}"]`);
-        if (lbEntry) {
-          const nameEl = lbEntry.querySelector(".player-name");
-          ownerName = nameEl ? nameEl.textContent.split(" [")[0] : `Player ${piece.team}`;
-        } else {
-          ownerName = `Player ${piece.team}`;
-        }
+        // Check playerNamesMap for name
+        const entry = window.playerNamesMap && window.playerNamesMap[piece.team];
+        ownerName = entry ? entry.name : `Player ${piece.team}`;
       }
     }
 

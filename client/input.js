@@ -208,52 +208,118 @@ function appendChatMessage(msg, color = "white", name = "", kills = 0) {
 }
 
 const leaderboard = document.getElementById("leaderboard-content");
-function addToLeaderboard(
-  playerName,
-  playerId,
-  mapName,
-  bracketValue = 0,
-  lbColor = "white",
-) {
-  let mapDiv = document.getElementById(`leaderboard-map-${mapName}`);
-  if (mapDiv === null) {
-    // create mapDiv
+
+// Track previous leaderboard state for animations
+const prevLBState = new Map(); // id -> { rank, kills }
+
+function updateLeaderboard(entries) {
+  let mapDiv = document.getElementById("leaderboard-map-Leaderboard");
+  if (!mapDiv) {
     mapDiv = document.createElement("div");
     mapDiv.classList.add("lb-group");
-    mapDiv.id = `leaderboard-map-${mapName}`;
-
-    const displayMapName = stringHTMLSafe(mapName);
-
-    const mapNameDiv = document.createElement("span");
-    mapDiv.appendChild(mapNameDiv);
-    mapNameDiv.classList.add("lb-name");
-    mapNameDiv.style.color =
-      /*window.mapColors[mapName] ??*/ /*'#6cd95b'*/ "#3528e0";
-    mapNameDiv.innerText = displayMapName;
-
+    mapDiv.id = "leaderboard-map-Leaderboard";
     leaderboard.appendChild(mapDiv);
   }
 
-  // add the player to the mapDiv
-  const playerContainer = document.createElement("div");
-  playerContainer.id = `player-container-${playerId}-${mapName}`;
-  playerContainer.classList.add("lb-players");
-  mapDiv.appendChild(playerContainer);
+  // Build new state map
+  const newState = new Map();
+  for (let i = 0; i < entries.length; i++) {
+    newState.set(entries[i].id, { rank: i, kills: entries[i].kills });
+  }
 
-  const playerDiv = document.createElement("div");
-  playerContainer.appendChild(playerDiv);
+  // Collect existing row elements
+  const existingRows = new Map();
+  for (const row of mapDiv.querySelectorAll(".lb-row")) {
+    const id = parseInt(row.dataset.playerId, 10);
+    if (!isNaN(id)) existingRows.set(id, row);
+  }
 
-  // Color indicator square
-  const colorIndicator = document.createElement("div");
-  colorIndicator.classList.add("player-color-indicator");
-  colorIndicator.style.backgroundColor = lbColor;
-  playerDiv.appendChild(colorIndicator);
+  // Remove rows for players no longer in leaderboard
+  for (const [id, row] of existingRows) {
+    if (!newState.has(id)) {
+      row.remove();
+      existingRows.delete(id);
+    }
+  }
 
-  const playerNameDiv = document.createElement("span");
-  playerNameDiv.classList.add("player-name");
-  playerNameDiv.innerText = playerName + ` [${bracketValue}]`;
-  playerDiv.appendChild(playerNameDiv);
+  // Create or update rows
+  for (let i = 0; i < entries.length; i++) {
+    const { name, id, kills, color } = entries[i];
+    const colorStr = `rgb(${color.r},${color.g},${color.b})`;
+    const prev = prevLBState.get(id);
+    let row = existingRows.get(id);
+
+    if (!row) {
+      // Create new row
+      row = document.createElement("div");
+      row.classList.add("lb-row");
+      row.dataset.playerId = id;
+
+      const rankSpan = document.createElement("span");
+      rankSpan.classList.add("lb-rank");
+      row.appendChild(rankSpan);
+
+      const colorInd = document.createElement("div");
+      colorInd.classList.add("player-color-indicator");
+      row.appendChild(colorInd);
+
+      const nameSpan = document.createElement("span");
+      nameSpan.classList.add("player-name");
+      row.appendChild(nameSpan);
+
+      const killsSpan = document.createElement("span");
+      killsSpan.classList.add("lb-kills");
+      row.appendChild(killsSpan);
+    }
+
+    // Update content
+    row.querySelector(".lb-rank").textContent = `${i + 1}.`;
+    row.querySelector(".player-color-indicator").style.backgroundColor = colorStr;
+    row.querySelector(".player-name").textContent = name;
+    row.querySelector(".lb-kills").textContent = kills;
+
+    // Tint row background based on kills (subtle color gradient)
+    const intensity = Math.min(kills * 2, 40);
+    row.style.background = intensity > 0
+      ? `rgba(${color.r},${color.g},${color.b},${intensity / 255})`
+      : "transparent";
+
+    // Animate: flash on score change
+    if (prev && prev.kills !== kills) {
+      row.classList.remove("lb-flash");
+      void row.offsetWidth; // Force reflow to restart animation
+      row.classList.add("lb-flash");
+    }
+
+    // Animate: rank movement
+    if (prev && prev.rank !== i) {
+      const cls = prev.rank > i ? "lb-rank-up" : "lb-rank-down";
+      row.classList.remove("lb-rank-up", "lb-rank-down");
+      void row.offsetWidth;
+      row.classList.add(cls);
+      setTimeout(() => row.classList.remove(cls), 500);
+    }
+
+    // Insert row at correct position
+    const currentChildren = [...mapDiv.querySelectorAll(".lb-row")];
+    if (currentChildren[i] !== row) {
+      if (currentChildren[i]) {
+        mapDiv.insertBefore(row, currentChildren[i]);
+      } else {
+        mapDiv.appendChild(row);
+      }
+    }
+  }
+
+  // Save state for next update
+  prevLBState.clear();
+  for (const [id, state] of newState) {
+    prevLBState.set(id, state);
+  }
 }
+
+// Legacy compat — kept for any other callers
+function addToLeaderboard() {}
 
 const isMobile =
   /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(

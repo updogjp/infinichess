@@ -447,15 +447,16 @@ body {
     rgba(10, 10, 10, 0.7)
   );
   padding: 15px;
-  overflow-y: auto;
-  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
   pointer-events: auto;
 }
 
 .leaderboard-header {
-  margin-bottom: 15px;
+  margin-bottom: 10px;
   padding-bottom: 10px;
   border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
 }
 
 .online-count {
@@ -489,17 +490,22 @@ body {
   }
 }
 
-.leaderboard-div::-webkit-scrollbar {
+#leaderboard-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+#leaderboard-content::-webkit-scrollbar {
   width: 4px;
 }
 
-.leaderboard-div::-webkit-scrollbar-thumb {
+#leaderboard-content::-webkit-scrollbar-thumb {
   background: var(--border-light);
 }
 
 .lb-group {
   background: transparent;
-  margin-bottom: 15px;
 }
 
 .lb-name {
@@ -508,31 +514,62 @@ body {
   font-weight: 700;
   letter-spacing: 2px;
   color: var(--text-secondary);
-  margin-bottom: 8px;
+  margin-bottom: 6px;
   text-transform: uppercase;
 }
 
-.lb-players {
-  margin: 0;
-  padding: 0;
-}
-
-.lb-players div {
+.lb-row {
   font-family: "Sometype Mono", monospace;
   font-size: 11px;
-  padding: 4px 0;
+  padding: 5px 8px;
   cursor: pointer;
-  transition: all 0.1s;
   border-left: 2px solid transparent;
-  padding-left: 8px;
   display: flex;
   align-items: center;
   gap: 8px;
+  transition: transform 0.4s ease, background 0.6s ease, border-left-color 0.3s ease;
+  position: relative;
 }
 
-.lb-players div:hover {
+.lb-row:hover {
   background: rgba(255, 255, 255, 0.05);
   border-left-color: var(--text-primary);
+}
+
+.lb-row.lb-flash {
+  animation: lbFlash 0.6s ease-out;
+}
+
+@keyframes lbFlash {
+  0% { background: rgba(255, 255, 100, 0.25); }
+  100% { background: transparent; }
+}
+
+.lb-row.lb-rank-up {
+  animation: lbRankUp 0.5s ease-out;
+}
+
+@keyframes lbRankUp {
+  0% { transform: translateY(28px); }
+  50% { transform: translateY(-2px); }
+  100% { transform: translateY(0); }
+}
+
+.lb-row.lb-rank-down {
+  animation: lbRankDown 0.5s ease-out;
+}
+
+@keyframes lbRankDown {
+  0% { transform: translateY(-28px); }
+  50% { transform: translateY(2px); }
+  100% { transform: translateY(0); }
+}
+
+.lb-rank {
+  font-size: 9px;
+  color: var(--text-muted);
+  min-width: 16px;
+  text-align: right;
 }
 
 .player-color-indicator {
@@ -550,6 +587,13 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.lb-kills {
+  font-size: 10px;
+  color: var(--text-secondary);
+  min-width: 24px;
+  text-align: right;
 }
 
 /* Hide utilities */

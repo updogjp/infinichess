@@ -373,14 +373,6 @@ ws.addEventListener("message", function (data) {
 
   // Leaderboard
   else if (msg[0] === 48027) {
-    const prevLB = document.querySelector(".lb-group");
-    if (prevLB) {
-      const toRemove = prevLB.querySelectorAll(".lb-players");
-      for (let i = 0; i < toRemove.length; i++) {
-        toRemove[i].remove();
-      }
-    }
-
     // Extract online player count
     const onlineCount = msg[1];
     const onlineCountElement = document.getElementById("onlineCount");
@@ -410,14 +402,10 @@ ws.addEventListener("message", function (data) {
     for (let i = 0; i < arr.length; i++) {
       const { name, id, kills, color } = arr[i];
       window.playerNamesMap[id] = { name, kills, color };
-      addToLeaderboard(
-        name,
-        id,
-        "Leaderboard",
-        kills,
-        `rgb(${color.r},${color.g},${color.b})`,
-      );
     }
+
+    // Animated leaderboard update
+    updateLeaderboard(arr);
     return;
   }
 });
