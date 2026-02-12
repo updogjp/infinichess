@@ -1126,12 +1126,15 @@ global.app = uWS
 
         console.log(`[Respawn] Player ${ws.id} (${meta.name}) respawning...`);
 
-        const pieceType = globalThis.PIECE_QUEEN;
+        const pieceType = globalThis.PIECE_KING;
         const spawn = findSpawnLocation(pieceType);
 
         ws.dead = false;
         ws.camera.x = spawn.x;
         ws.camera.y = spawn.y;
+
+        // Reset kills so evolution restarts from King
+        leaderboard.set(ws.id, 0);
 
         setSquare(spawn.x, spawn.y, pieceType, ws.id);
 

@@ -194,13 +194,13 @@ globalThis.SpatialHash = class SpatialHash {
     }
 };
 
-// Auto-evolve progression: King → Queen → Bishop/Rook (random) → Knight
-// Players start weak and specialize as they capture
+// Auto-evolve progression: King → Knight → Bishop/Rook → Queen
+// Players start weak and grow stronger with each evolution
 const EVOLUTION_THRESHOLDS = [
-    { kills: 0,  piece: PIECE_KING },      // Start: weak, 1 square all directions
-    { kills: 3,  piece: PIECE_QUEEN },     // 3 kills: 8-direction ranged
-    { kills: 6,  piece: -1 },              // 6 kills: Random Bishop or Rook
-    { kills: 10, piece: PIECE_KNIGHT },    // 10 kills: strongest, L-shape jumps
+    { kills: 0,  piece: PIECE_KING },      // Start: 1 square, all directions
+    { kills: 3,  piece: PIECE_KNIGHT },    // 3 kills: L-shape jumps
+    { kills: 6,  piece: -1 },              // 6 kills: Random Bishop or Rook (ranged)
+    { kills: 10, piece: PIECE_QUEEN },     // 10 kills: final form, 8-dir extended range
 ];
 globalThis.EVOLUTION_THRESHOLDS = EVOLUTION_THRESHOLDS;
 
