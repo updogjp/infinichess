@@ -352,6 +352,10 @@ function render() {
 
   if (moved) changed = true;
 
+  // Keep rendering during active interpolations or fades
+  if (interpolatingPieces && Object.keys(interpolatingPieces).length > 0) changed = true;
+  if (window.aiCooldowns && window.aiCooldowns.size > 0) changed = true;
+
   if (!changed && !interpSquare) return;
   changed = false;
 
@@ -505,8 +509,10 @@ function render() {
 
         if (interpolatingPieces && interpolatingPieces[interpKey]) {
           const interp = interpolatingPieces[interpKey];
-          interp[0] = interpolate(interp[0], piece.x, (0.45 * dt) / 16.66);
-          interp[1] = interpolate(interp[1], piece.y, (0.45 * dt) / 16.66);
+          // Faster lerp factor for snappier, less juddery movement
+          const lerpFactor = 1 - Math.pow(0.001, dt / 1000);
+          interp[0] = interpolate(interp[0], piece.x, lerpFactor);
+          interp[1] = interpolate(interp[1], piece.y, lerpFactor);
 
           if (
             Math.abs(interp[0] - piece.x) < 0.01 &&
@@ -517,6 +523,7 @@ function render() {
 
           renderX = interp[0];
           renderY = interp[1];
+          changed = true; // Keep rendering during interpolation
         }
 
         // Apply fade-in effect
@@ -550,26 +557,31 @@ function render() {
     }
   }
 
-  // Draw nameplates above king pieces
+  // Draw nameplates above player-owned pieces (one per team)
   if (window.playerNamesMap) {
-    const kings = visiblePieces.filter((p) => p.type === 6 && p.team !== 0);
+    const seenTeams = new Set();
+    const playerPieces = visiblePieces.filter((p) => {
+      if (p.team === 0 || p.team >= 10000 || seenTeams.has(p.team)) return false;
+      seenTeams.add(p.team);
+      return true;
+    });
 
     ctx.textAlign = "center";
     ctx.textBaseline = "bottom";
     const fontSize = Math.max(10, Math.min(14, 14 / camera.scale));
     ctx.font = `600 ${fontSize}px "Sometype Mono", monospace`;
 
-    for (const king of kings) {
-      const info = window.playerNamesMap[king.team];
+    for (const pp of playerPieces) {
+      const info = window.playerNamesMap[pp.team];
       const label = info
         ? info.name
-        : king.team === selfId
+        : pp.team === selfId
           ? window.playerName || "You"
-          : `#${king.team}`;
-      const color = teamToColor(king.team);
+          : `#${pp.team}`;
+      const color = teamToColor(pp.team);
 
-      const cx = king.x * squareSize + squareSize / 2;
-      const cy = king.y * squareSize - 22;
+      const cx = pp.x * squareSize + squareSize / 2;
+      const cy = pp.y * squareSize - 22;
 
       // Shadow for readability
       ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
@@ -646,21 +658,21 @@ function render() {
       changed = true; // Keep rendering during cooldown
       const percent = cooldownRemaining / cooldownTotal;
 
-      // Find player's king
+      // Find player's piece (any piece owned by us)
       const pieces = window.spatialHash.getAllPieces();
-      let kingPiece = null;
+      let myPiece = null;
       for (const piece of pieces) {
-        if (piece.type === 6 && piece.team === selfId) {
-          kingPiece = piece;
+        if (piece.team === selfId) {
+          myPiece = piece;
           break;
         }
       }
 
-      if (kingPiece) {
+      if (myPiece) {
         const w = squareSize * 0.8;
         const h = 8;
-        const x = kingPiece.x * squareSize + (squareSize - w) / 2;
-        const y = kingPiece.y * squareSize - 15;
+        const x = myPiece.x * squareSize + (squareSize - w) / 2;
+        const y = myPiece.y * squareSize - 15;
 
         // Background
         ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
@@ -676,6 +688,57 @@ function render() {
         ctx.lineWidth = 1;
         ctx.strokeRect(x, y, w, h);
       }
+    }
+  }
+
+  // Draw cooldown bars above AI pieces
+  if (window.aiCooldowns && window.aiCooldowns.size > 0) {
+    const now = performance.now();
+    const expiredIds = [];
+
+    for (const [aiTeamId, cd] of window.aiCooldowns) {
+      const remaining = cd.endTime - now;
+      if (remaining <= 0) {
+        expiredIds.push(aiTeamId);
+        continue;
+      }
+
+      // Find this AI piece in visible pieces
+      let aiPiece = null;
+      for (const p of visiblePieces) {
+        if (p.team === aiTeamId) {
+          aiPiece = p;
+          break;
+        }
+      }
+      if (!aiPiece) continue;
+
+      const percent = remaining / cd.total;
+      const w = squareSize * 0.6;
+      const h = 5;
+      const x = aiPiece.x * squareSize + (squareSize - w) / 2;
+      const y = aiPiece.y * squareSize - 10;
+
+      // Background
+      ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
+      ctx.fillRect(x + w * (1 - percent), y, w * percent, h);
+
+      // Foreground (filled part)
+      const color = teamToColor(aiTeamId);
+      ctx.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, 0.7)`;
+      ctx.fillRect(x, y, w * (1 - percent), h);
+
+      // Border
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.2)";
+      ctx.lineWidth = 0.5;
+      ctx.strokeRect(x, y, w, h);
+
+      changed = true;
+    }
+
+    // Clean up expired cooldowns
+    for (const id of expiredIds) {
+      window.aiCooldowns.delete(id);
     }
   }
 
@@ -730,27 +793,27 @@ function render() {
       ? "INFINITE"
       : "64x64";
 
-    // Find player's king position
+    // Find player's piece position (any piece owned by us)
     if (window.spatialHash) {
       const pieces = window.spatialHash.getAllPieces();
-      let kingX = null;
-      let kingY = null;
+      let myX = null;
+      let myY = null;
       let myPieceCount = 0;
 
       for (const piece of pieces) {
         if (piece.team === selfId) {
           myPieceCount++;
-          if (piece.type === 6) {
-            kingX = piece.x;
-            kingY = piece.y;
+          if (myX === null) {
+            myX = piece.x;
+            myY = piece.y;
           }
         }
       }
 
-      if (kingX !== null && kingY !== null) {
-        window.myKingX = kingX;
-        window.myKingY = kingY;
-        document.getElementById("stat-pos").textContent = toChessNotation(kingX, kingY);
+      if (myX !== null && myY !== null) {
+        window.myKingX = myX;
+        window.myKingY = myY;
+        document.getElementById("stat-pos").textContent = toChessNotation(myX, myY);
       } else {
         document.getElementById("stat-pos").textContent = "---";
       }
@@ -871,6 +934,18 @@ function renderMinimap() {
   }
 }
 
+// Pastel color palette shared by players and AI
+const PASTEL_PALETTE = [
+  { r: 255, g: 179, b: 186 }, // #FFB3BA - pink
+  { r: 186, g: 255, b: 201 }, // #BAFFC9 - mint
+  { r: 186, g: 225, b: 255 }, // #BAE1FF - blue
+  { r: 255, g: 255, b: 186 }, // #FFFFBA - yellow
+  { r: 255, g: 186, b: 243 }, // #FFBAF3 - magenta
+  { r: 186, g: 255, b: 255 }, // #BFFFFF - cyan
+  { r: 255, g: 217, b: 186 }, // #FFD9BA - orange
+  { r: 231, g: 186, b: 255 }, // #E7BAFF - purple
+];
+
 // Seeded rng
 function teamToColor(team) {
   // Use player's chosen color for their own team
@@ -886,20 +961,13 @@ function teamToColor(team) {
     }
   }
 
-  // Generate random color for other teams
-  let num = Math.round(((Math.sin(team * 10000) + 1) / 2) * 0xffffff);
-
-  let r = (num & 0xff0000) >>> 16;
-  let g = (num & 0x00ff00) >>> 8;
-  let b = num & 0x0000ff;
-
-  if (r + g + b > 520) {
-    r /= 2;
-    g /= 2;
-    b /= 2;
+  // AI pieces (id >= 10000) use pastel palette
+  if (team >= 10000) {
+    return PASTEL_PALETTE[team % PASTEL_PALETTE.length];
   }
 
-  return { r, g, b };
+  // Other players also use pastel palette for consistency
+  return PASTEL_PALETTE[Math.abs(team) % PASTEL_PALETTE.length];
 }
 
 function generateTintedImages(color) {
@@ -1045,26 +1113,32 @@ document.addEventListener("DOMContentLoaded", () => {
   const collapseButtons = document.querySelectorAll(".collapse-btn");
   
   collapseButtons.forEach(button => {
-    button.addEventListener("click", () => {
+    button.addEventListener("click", (e) => {
+      e.stopPropagation();
       const targetId = button.getAttribute("data-target");
       const target = document.getElementById(targetId);
       
       if (target) {
-        // Find the parent panel to collapse
-        let panel = target.closest(".stats-panel") || target.closest(".leaderboard-div");
+        const isCollapsed = target.classList.contains("collapsed");
         
-        if (panel) {
-          const isCollapsed = panel.classList.contains("collapsed");
-          
-          if (isCollapsed) {
-            panel.classList.remove("collapsed");
-            button.textContent = "−";
-          } else {
-            panel.classList.add("collapsed");
-            button.textContent = "+";
-          }
+        if (isCollapsed) {
+          target.classList.remove("collapsed");
+          button.textContent = "−";
+        } else {
+          target.classList.add("collapsed");
+          button.textContent = "+";
         }
       }
     });
   });
+
+  // Also hide recenter button when stats content is collapsed
+  const recenterBtn = document.getElementById("recenterBtn");
+  if (recenterBtn) {
+    const statsContent = document.getElementById("stats-content");
+    const observer = new MutationObserver(() => {
+      recenterBtn.style.display = statsContent.classList.contains("collapsed") ? "none" : "";
+    });
+    observer.observe(statsContent, { attributes: true, attributeFilter: ["class"] });
+  }
 });

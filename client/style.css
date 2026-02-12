@@ -763,15 +763,9 @@ body {
   color: var(--text-primary);
 }
 
-/* Collapsible content */
+/* Collapsible content - only hide the content, keep header visible */
 .stats-content.collapsed,
 #leaderboard-content.collapsed {
-  display: none;
-}
-
-/* Hide entire panels when collapsed */
-.stats-panel.collapsed,
-.leaderboard-div.collapsed {
   display: none;
 }
 

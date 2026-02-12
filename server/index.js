@@ -67,10 +67,11 @@ const GAME_CONFIG = {
 // Piece spawner configuration
 const AI_CONFIG = {
   enabled: true, // Set to false to disable AI players
-  piecesPerPlayer: 8, // AI pieces to spawn per online player (e.g., 3 players = 24 AI pieces)
-  spawnRadius: 2000, // Spawn AI within this distance of online players
-  moveInterval: 3000, // AI makes moves every 3 seconds
-  moveChance: 0.3, // 30% chance an AI piece moves each interval
+  piecesPerPlayer: 6, // AI pieces to spawn per online player
+  spawnRadius: 2500, // Spawn AI within this distance of online players
+  removalRadius: 8000, // Remove AI pieces if they wander beyond this distance (much larger to prevent pop-in/out)
+  moveInterval: 800, // AI makes moves every 800ms (matches interpolation timing better)
+  moveChance: 0.4, // 40% chance an AI piece moves each interval
 };
 
 // Initialize spatial hash for infinite world
@@ -199,10 +200,11 @@ function move(startX, startY, finX, finY, playerId) {
     setSquare(startX, startY, endPiece.type, playerId);
   }
 
-  // King capture: eliminate player
+  // Player piece capture: eliminate player (works for any piece type, not just king)
   if (
-    endPiece.type === 6 &&
+    endPiece.type !== 0 &&
     endPiece.team !== 0 &&
+    endPiece.team < AI_ID_MIN &&
     clients[endPiece.team] !== undefined
   ) {
     const victimId = endPiece.team;
@@ -374,8 +376,13 @@ global.clients = {};
 let connectedIps = {};
 let id = 1;
 
+// AI IDs use range 10000-60000 to fit in Uint16Array (max 65535)
+// Player IDs use 1-9999
+const AI_ID_MIN = 10000;
+const AI_ID_MAX = 60000;
+
 function generateId() {
-  if (id >= 65532) id = 1;
+  if (id >= AI_ID_MIN) id = 1;
   return id++;
 }
 
@@ -386,7 +393,7 @@ function decodeText(u8array, startPos = 0, endPos = Infinity) {
 
 // AI player system - spawns intelligent pieces near online players
 const aiPieces = new Map(); // aiPieceId -> {x, y, type, lastMove}
-let nextAiId = 100000; // AI IDs start at 100000 to avoid collision
+let nextAiId = AI_ID_MIN;
 
 // Spawn AI pieces near online players
 function spawnAIPieces() {
@@ -426,6 +433,7 @@ function spawnAIPieces() {
 
       // Random piece type (1=pawn, 2=knight, 3=bishop, 4=rook, 5=queen)
       const pieceType = Math.floor(Math.random() * 5) + 1;
+      if (nextAiId >= AI_ID_MAX) nextAiId = AI_ID_MIN;
       const aiId = nextAiId++;
 
       // Assign AI piece a color from the palette
@@ -474,7 +482,7 @@ function spawnAIPieces() {
       const dy = (aiPiece.y - meta.kingY) * 150;
       const dist = Math.sqrt(dx * dx + dy * dy);
 
-      if (dist < AI_CONFIG.spawnRadius * 2) {
+      if (dist < AI_CONFIG.removalRadius) {
         nearPlayer = true;
         break;
       }
@@ -524,7 +532,7 @@ function moveAIPieces() {
     }
 
     // If capturing another AI piece, remove it from tracking
-    if (targetPiece.team !== 0 && targetPiece.team >= 100000) {
+    if (targetPiece.team !== 0 && targetPiece.team >= AI_ID_MIN) {
       aiPieces.delete(targetPiece.team);
     }
 
@@ -563,15 +571,9 @@ setInterval(() => {
 
   for (const piece of allPieces) {
     if (teamsToRemove.includes(piece.team)) {
-      if (piece.type === 6) {
-        // Remove king entirely
-        spatialHash.set(piece.x, piece.y, 0, 0);
-        setSquare(piece.x, piece.y, 0, 0);
-      } else {
-        // Neutralize other pieces
-        spatialHash.set(piece.x, piece.y, piece.type, 0);
-        setSquare(piece.x, piece.y, piece.type, 0);
-      }
+      // Neutralize all pieces from disconnected player
+      spatialHash.set(piece.x, piece.y, piece.type, 0);
+      setSquare(piece.x, piece.y, piece.type, 0);
     }
   }
 
@@ -787,8 +789,10 @@ global.app = uWS
       }
 
       // Player info (name and color and piece type)
-      const u16 = new Uint16Array(data);
-      if (u16[0] === 55551) {
+      // Use DataView to safely read u16 from potentially odd-length buffer
+      const dv = new DataView(data);
+      const firstU16 = data.byteLength >= 2 ? dv.getUint16(0, true) : 0;
+      if (firstU16 === 55551) {
         const nameLength = u8[2];
         const r = u8[3];
         const g = u8[4];
@@ -919,7 +923,7 @@ global.app = uWS
       }
 
       if (data.byteLength % 2 !== 0) return;
-      const decoded = new Uint16Array(data);
+      const decoded = new Uint16Array(data.byteLength >= 2 ? data : new ArrayBuffer(0));
 
       // Chat message
       if (decoded[0] === 47095) {

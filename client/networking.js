@@ -13,6 +13,54 @@ window.spatialHash = spatialHash;
 // Store for interpolating piece movements
 let interpolatingPieces = {};
 
+// Piece fade in/out system - tracks opacity transitions
+// Key: "x,y" -> { alpha: 0-1, target: 0 or 1, startTime: timestamp }
+const pieceFades = new Map();
+const FADE_DURATION = 400; // ms for fade in/out
+
+window.getPieceFadeAlpha = (x, y) => {
+  const key = `${x},${y}`;
+  const fade = pieceFades.get(key);
+  if (!fade) return 1.0;
+  const elapsed = performance.now() - fade.startTime;
+  const t = Math.min(1, elapsed / FADE_DURATION);
+  const alpha = fade.target === 1 ? t : 1 - t;
+  if (t >= 1) {
+    if (fade.target === 1) pieceFades.delete(key);
+    // fade-out entries cleaned up after removal
+  }
+  return Math.max(0, Math.min(1, alpha));
+};
+
+window.getPieceFadeScale = (x, y) => {
+  const key = `${x},${y}`;
+  const fade = pieceFades.get(key);
+  if (!fade) return 1.0;
+  const elapsed = performance.now() - fade.startTime;
+  const t = Math.min(1, elapsed / FADE_DURATION);
+  if (fade.target === 1) {
+    // Pop-in: scale from 0.7 to 1.0
+    return 0.7 + 0.3 * t;
+  } else {
+    // Fade-out: scale from 1.0 to 0.7
+    return 1.0 - 0.3 * t;
+  }
+};
+
+function startFadeIn(x, y) {
+  pieceFades.set(`${x},${y}`, { target: 1, startTime: performance.now() });
+  changed = true;
+}
+
+function startFadeOut(x, y) {
+  pieceFades.set(`${x},${y}`, { target: 0, startTime: performance.now() });
+  changed = true;
+}
+
+// Track AI piece cooldowns for rendering bars
+// Key: aiTeamId -> { endTime: timestamp, total: ms }
+window.aiCooldowns = new Map();
+
 // Active chat bubbles
 const activeChatBubbles = new Map(); // playerId -> { text, time, element }
 
@@ -30,13 +78,21 @@ ws.addEventListener("message", function (data) {
       `🔄 Viewport sync: selfId=${selfId}, pieces=${count}, infiniteMode=${window.infiniteMode}`,
     );
 
+    // Track existing pieces before clearing for fade transitions
+    const oldPieceKeys = new Set();
+    const oldPieces = spatialHash.getAllPieces();
+    for (const p of oldPieces) {
+      if (p.type !== 0) oldPieceKeys.add(`${p.x},${p.y}`);
+    }
+
     // Clear and repopulate spatial hash with viewport pieces
     spatialHash.chunks.clear();
     spatialHash.pieceCount = 0;
 
     let i = 4; // Start after magic, selfId, count, infiniteMode
-    let myKingX = null;
-    let myKingY = null;
+    let myPieceX = null;
+    let myPieceY = null;
+    const newPieceKeys = new Set();
 
     for (let j = 0; j < count; j++) {
       const x = msg[i++];
@@ -44,19 +100,25 @@ ws.addEventListener("message", function (data) {
       const type = msg[i++];
       const team = msg[i++];
       spatialHash.set(x, y, type, team);
+      newPieceKeys.add(`${x},${y}`);
 
-      // Find player's king to center camera
-      if (type === 6 && team === selfId) {
-        myKingX = x;
-        myKingY = y;
-        console.log(`👑 Found my king at ${x},${y}`);
+      // Fade in pieces that weren't in the old set
+      if (!oldPieceKeys.has(`${x},${y}`)) {
+        startFadeIn(x, y);
+      }
+
+      // Find player's piece to center camera (any piece owned by us)
+      if (team === selfId && myPieceX === null) {
+        myPieceX = x;
+        myPieceY = y;
+        console.log(`🎯 Found my piece (type ${type}) at ${x},${y}`);
       }
     }
 
-    // Center camera on player's king (center of the square)
-    if (myKingX !== null && myKingY !== null) {
-      camera.x = -(myKingX * squareSize + squareSize / 2);
-      camera.y = -(myKingY * squareSize + squareSize / 2);
+    // Center camera on player's piece (center of the square)
+    if (myPieceX !== null && myPieceY !== null) {
+      camera.x = -(myPieceX * squareSize + squareSize / 2);
+      camera.y = -(myPieceY * squareSize + squareSize / 2);
     }
 
     // Show chat UI and leaderboard after first sync
@@ -74,7 +136,14 @@ ws.addEventListener("message", function (data) {
     const piece = msg[3];
     const team = msg[4];
 
+    const oldPiece = spatialHash.get(x, y);
+
     spatialHash.set(x, y, piece, team);
+
+    // Fade in new pieces, fade out removed pieces
+    if (piece !== 0 && oldPiece.type === 0) {
+      startFadeIn(x, y);
+    }
 
     if (piece === 6 && team === selfId) {
       gameOver = false;
@@ -111,11 +180,11 @@ ws.addEventListener("message", function (data) {
       } catch (e) {}
     }
 
-    // Check if our king was captured
+    // Check if our piece was captured (game over when we lose our piece)
     if (
-      movingPiece.type === 6 &&
-      endPiece.type === 6 &&
-      endPiece.team === selfId
+      endPiece.team === selfId &&
+      endPiece.type !== 0 &&
+      playerId !== selfId
     ) {
       interpSquare = [finX, finY];
       gameOver = true;
@@ -139,6 +208,15 @@ ws.addEventListener("message", function (data) {
     if (playerId !== selfId || !moveWasDrag) {
       const interpKey = `${finX},${finY}`;
       interpolatingPieces[interpKey] = [startX, startY];
+    }
+
+    // Track AI cooldowns for rendering cooldown bars
+    if (playerId >= 10000) {
+      const aiCooldownMs = 800;
+      window.aiCooldowns.set(playerId, {
+        endTime: performance.now() + aiCooldownMs,
+        total: aiCooldownMs,
+      });
     }
 
     // Clear selection if our piece moved
@@ -171,11 +249,7 @@ ws.addEventListener("message", function (data) {
     const allPieces = spatialHash.getAllPieces();
     for (const piece of allPieces) {
       if (teamsToNeutralize.includes(piece.team)) {
-        if (piece.type === 6) {
-          spatialHash.set(piece.x, piece.y, 0, 0);
-        } else {
-          spatialHash.set(piece.x, piece.y, piece.type, 0);
-        }
+        spatialHash.set(piece.x, piece.y, piece.type, 0);
       }
     }
 
@@ -413,7 +487,9 @@ function hexToRgb(hex) {
 function sendPlayerInfo() {
   // Send player info: magic(2) + nameLen(1) + r(1) + g(1) + b(1) + piece(1) + padding(1) + name(variable)
   const nameBuf = new TextEncoder().encode(window.playerName);
-  const bufLen = 8 + nameBuf.length;
+  // Ensure even byte length so server can safely create Uint16Array
+  const rawLen = 8 + nameBuf.length;
+  const bufLen = rawLen % 2 === 0 ? rawLen : rawLen + 1;
   const buf = new Uint8Array(bufLen);
   const u16 = new Uint16Array(buf.buffer);
 
@@ -452,12 +528,12 @@ function sendPlayerInfo() {
 
 // Floating chat bubbles
 function showChatBubble(playerId, text) {
-  // Find player's king piece
+  // Find player's piece (any piece owned by them)
   const pieces = spatialHash.getAllPieces();
   let kingPiece = null;
 
   for (const piece of pieces) {
-    if (piece.type === 6 && piece.team === playerId) {
+    if (piece.team === playerId && piece.type !== 0) {
       kingPiece = piece;
       break;
     }
@@ -501,10 +577,10 @@ function showChatBubble(playerId, text) {
 // Update bubble positions in render loop
 window.updateChatBubbles = function () {
   activeChatBubbles.forEach((data, playerId) => {
-    // Update piece position (in case king moved)
+    // Update piece position (in case piece moved)
     const pieces = spatialHash.getAllPieces();
     for (const piece of pieces) {
-      if (piece.type === 6 && piece.team === playerId) {
+      if (piece.team === playerId && piece.type !== 0) {
         data.pieceX = piece.x;
         data.pieceY = piece.y;
         break;
