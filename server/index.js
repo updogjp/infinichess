@@ -200,6 +200,17 @@ function move(startX, startY, finX, finY, playerId) {
     setSquare(startX, startY, endPiece.type, playerId);
   }
 
+  // AI piece capture: increment score for the capturing player
+  if (
+    endPiece.type !== 0 &&
+    endPiece.team >= AI_ID_MIN &&
+    playerId < AI_ID_MIN
+  ) {
+    const currentKills = leaderboard.get(playerId) || 0;
+    leaderboard.set(playerId, currentKills + 1);
+    broadcastToAll(sendLeaderboard());
+  }
+
   // Player piece capture: eliminate player (works for any piece type, not just king)
   if (
     endPiece.type !== 0 &&
@@ -501,19 +512,30 @@ function moveAIPieces() {
   if (!AI_CONFIG.enabled) return;
   if (aiPieces.size === 0) return;
 
+  const toDelete = [];
+
   for (const [aiId, aiPiece] of aiPieces) {
+    // Verify the piece at this position still belongs to this AI
+    // (it may have been captured by a player)
+    const currentPiece = spatialHash.get(aiPiece.x, aiPiece.y);
+    if (currentPiece.team !== aiId) {
+      toDelete.push(aiId);
+      continue;
+    }
+
     // Random chance to move
     if (Math.random() > AI_CONFIG.moveChance) continue;
 
     // Don't move too frequently
     if (Date.now() - aiPiece.lastMove < AI_CONFIG.moveInterval) continue;
 
-    // Generate legal moves
+    // Generate legal moves (AI gets fixed range equivalent to 5 kills)
     const legalMoves = generateLegalMoves(
       aiPiece.x,
       aiPiece.y,
       spatialHash,
       aiId,
+      5,
     );
 
     if (legalMoves.length === 0) continue;
@@ -526,8 +548,8 @@ function moveAIPieces() {
     // Check if target square has a piece
     const targetPiece = spatialHash.get(newX, newY);
 
-    // AI won't capture player kings, only other pieces
-    if (targetPiece.type === 6 && clients[targetPiece.team]) {
+    // AI won't capture any player pieces (team 1-9999)
+    if (targetPiece.type !== 0 && targetPiece.team > 0 && targetPiece.team < AI_ID_MIN) {
       continue;
     }
 
@@ -543,6 +565,11 @@ function moveAIPieces() {
     aiPiece.x = newX;
     aiPiece.y = newY;
     aiPiece.lastMove = Date.now();
+  }
+
+  // Clean up captured AI entries
+  for (const id of toDelete) {
+    aiPieces.delete(id);
   }
 }
 
@@ -990,12 +1017,14 @@ global.app = uWS
         // Validate ownership
         if (startPiece.team !== ws.id) return;
 
-        // Validate move legality
+        // Validate move legality (range scales with kills)
+        const playerKills = leaderboard.get(ws.id) || 0;
         const legalMoves = generateLegalMoves(
           startX,
           startY,
           spatialHash,
           ws.id,
+          playerKills,
         );
 
         let isLegal = false;

@@ -184,13 +184,26 @@ globalThis.SpatialHash = class SpatialHash {
     }
 };
 
+// Move range scales with captures: base 3 + 1 per kill, capped at 22
+const MOVE_RANGE_BASE = 3;
+const MOVE_RANGE_PER_KILL = 1;
+const MOVE_RANGE_CAP = 22;
+globalThis.MOVE_RANGE_BASE = MOVE_RANGE_BASE;
+globalThis.MOVE_RANGE_PER_KILL = MOVE_RANGE_PER_KILL;
+globalThis.MOVE_RANGE_CAP = MOVE_RANGE_CAP;
+
+globalThis.getMoveRange = (kills) => {
+    return Math.min(MOVE_RANGE_CAP, MOVE_RANGE_BASE + (kills || 0) * MOVE_RANGE_PER_KILL);
+};
+
 // Legacy: Generate legal moves (updated for spatial hash)
-globalThis.generateLegalMoves = (x, y, spatialHash, selfId) => {
+globalThis.generateLegalMoves = (x, y, spatialHash, selfId, kills) => {
     const piece = spatialHash.get(x, y);
     const type = piece.type;
     if (type === PIECE_EMPTY) return [];
     
-    return moveMap[type](x, y, spatialHash, selfId);
+    const range = getMoveRange(kills);
+    return moveMap[type](x, y, spatialHash, selfId, range);
 };
 
 // Helper for straight line moves
@@ -218,7 +231,7 @@ const moveMap = [
     undefined, // 0 = empty
     
     // 1 = pawn
-    (x, y, spatialHash, selfId) => {
+    (x, y, spatialHash, selfId, range) => {
         const moves = [];
         
         // Orthogonal moves
@@ -243,7 +256,7 @@ const moveMap = [
     },
     
     // 2 = knight
-    (x, y, spatialHash, selfId) => {
+    (x, y, spatialHash, selfId, range) => {
         const knightMoves = [
             [x+1,y+2], [x+2,y+1], [x+2,y-1], [x+1,y-2],
             [x-1,y-2], [x-2,y-1], [x-2,y+1], [x-1,y+2]
@@ -255,41 +268,41 @@ const moveMap = [
     },
     
     // 3 = bishop
-    (x, y, spatialHash, selfId) => {
+    (x, y, spatialHash, selfId, range) => {
         const moves = [];
-        getAllStraightLineMoves(moves, x, y, 1, 1, spatialHash, selfId);
-        getAllStraightLineMoves(moves, x, y, 1, -1, spatialHash, selfId);
-        getAllStraightLineMoves(moves, x, y, -1, 1, spatialHash, selfId);
-        getAllStraightLineMoves(moves, x, y, -1, -1, spatialHash, selfId);
+        getAllStraightLineMoves(moves, x, y, 1, 1, spatialHash, selfId, range);
+        getAllStraightLineMoves(moves, x, y, 1, -1, spatialHash, selfId, range);
+        getAllStraightLineMoves(moves, x, y, -1, 1, spatialHash, selfId, range);
+        getAllStraightLineMoves(moves, x, y, -1, -1, spatialHash, selfId, range);
         return moves;
     },
     
     // 4 = rook
-    (x, y, spatialHash, selfId) => {
+    (x, y, spatialHash, selfId, range) => {
         const moves = [];
-        getAllStraightLineMoves(moves, x, y, 1, 0, spatialHash, selfId);
-        getAllStraightLineMoves(moves, x, y, 0, 1, spatialHash, selfId);
-        getAllStraightLineMoves(moves, x, y, -1, 0, spatialHash, selfId);
-        getAllStraightLineMoves(moves, x, y, 0, -1, spatialHash, selfId);
+        getAllStraightLineMoves(moves, x, y, 1, 0, spatialHash, selfId, range);
+        getAllStraightLineMoves(moves, x, y, 0, 1, spatialHash, selfId, range);
+        getAllStraightLineMoves(moves, x, y, -1, 0, spatialHash, selfId, range);
+        getAllStraightLineMoves(moves, x, y, 0, -1, spatialHash, selfId, range);
         return moves;
     },
     
     // 5 = queen
-    (x, y, spatialHash, selfId) => {
+    (x, y, spatialHash, selfId, range) => {
         const moves = [];
-        getAllStraightLineMoves(moves, x, y, 1, 1, spatialHash, selfId);
-        getAllStraightLineMoves(moves, x, y, 1, -1, spatialHash, selfId);
-        getAllStraightLineMoves(moves, x, y, -1, 1, spatialHash, selfId);
-        getAllStraightLineMoves(moves, x, y, -1, -1, spatialHash, selfId);
-        getAllStraightLineMoves(moves, x, y, 1, 0, spatialHash, selfId);
-        getAllStraightLineMoves(moves, x, y, 0, 1, spatialHash, selfId);
-        getAllStraightLineMoves(moves, x, y, -1, 0, spatialHash, selfId);
-        getAllStraightLineMoves(moves, x, y, 0, -1, spatialHash, selfId);
+        getAllStraightLineMoves(moves, x, y, 1, 1, spatialHash, selfId, range);
+        getAllStraightLineMoves(moves, x, y, 1, -1, spatialHash, selfId, range);
+        getAllStraightLineMoves(moves, x, y, -1, 1, spatialHash, selfId, range);
+        getAllStraightLineMoves(moves, x, y, -1, -1, spatialHash, selfId, range);
+        getAllStraightLineMoves(moves, x, y, 1, 0, spatialHash, selfId, range);
+        getAllStraightLineMoves(moves, x, y, 0, 1, spatialHash, selfId, range);
+        getAllStraightLineMoves(moves, x, y, -1, 0, spatialHash, selfId, range);
+        getAllStraightLineMoves(moves, x, y, 0, -1, spatialHash, selfId, range);
         return moves;
     },
     
     // 6 = king
-    (x, y, spatialHash, selfId) => {
+    (x, y, spatialHash, selfId, range) => {
         const kingMoves = [
             [x+1,y], [x-1,y], [x,y+1], [x,y-1],
             [x+1,y+1], [x+1,y-1], [x-1,y+1], [x-1,y-1]

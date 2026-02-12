@@ -39,6 +39,26 @@ window.onunhandledrejection = (e) => {
   window.showToast(msg, "error", 5000);
 };
 
+// Kill feed notification system
+const killFeedContainer = document.getElementById("killFeed");
+window.showKillFeed = (attacker, victim, pieceName, isSelf) => {
+  if (!killFeedContainer) return;
+  const entry = document.createElement("div");
+  entry.className = `kill-entry${isSelf ? " kill-self" : ""}`;
+  entry.innerHTML = `<span class="kill-attacker">${attacker}</span> ⚔ <span class="kill-victim">${victim}</span>'s <span class="kill-piece">${pieceName}</span>`;
+  killFeedContainer.appendChild(entry);
+
+  // Keep max 5 entries
+  while (killFeedContainer.children.length > 5) {
+    killFeedContainer.firstChild.remove();
+  }
+
+  setTimeout(() => {
+    entry.classList.add("kill-fade");
+    setTimeout(() => entry.remove(), 400);
+  }, 4000);
+};
+
 // Camera panning state
 let isPanning = false;
 let panStartX = 0;
@@ -131,11 +151,14 @@ window.onmousedown = (e) => {
       selectedSquareX = squareX;
       selectedSquareY = squareY;
 
+      const myKills = (window.playerNamesMap && window.playerNamesMap[selfId])
+        ? window.playerNamesMap[selfId].kills : 0;
       legalMoves = generateLegalMoves(
         selectedSquareX,
         selectedSquareY,
         window.spatialHash,
         selfId,
+        myKills,
       );
 
       draggingSelected = true;
@@ -325,6 +348,22 @@ function render() {
       camera.x = camera.x * oldScale / camera.scale;
       camera.y = camera.y * oldScale / camera.scale;
       moved = true;
+    }
+  }
+
+  // Camera follow mode: smoothly track player's piece
+  if (window.followCamera && selfId !== -1 && window.spatialHash) {
+    const pieces = window.spatialHash.getAllPieces();
+    for (const piece of pieces) {
+      if (piece.team === selfId) {
+        const targetX = -(piece.x * squareSize + squareSize / 2);
+        const targetY = -(piece.y * squareSize + squareSize / 2);
+        const followLerp = 1 - Math.pow(0.01, dt / 1000);
+        camera.x = interpolate(camera.x, targetX, followLerp);
+        camera.y = interpolate(camera.y, targetY, followLerp);
+        changed = true;
+        break;
+      }
     }
   }
 
@@ -821,6 +860,14 @@ function render() {
       document.getElementById("stat-pieces").textContent = myPieceCount;
     }
 
+    // Update move range display
+    const myKills = (window.playerNamesMap && window.playerNamesMap[selfId])
+      ? window.playerNamesMap[selfId].kills : 0;
+    const rangeEl = document.getElementById("stat-range");
+    if (rangeEl) {
+      rangeEl.textContent = getMoveRange(myKills);
+    }
+
     document.getElementById("stat-zoom").textContent =
       camera.scale.toFixed(2) + "x";
   }
@@ -1108,37 +1155,55 @@ function interpolate(s, e, t) {
   return (1 - t) * s + e * t;
 }
 
-// Collapse button functionality
+// Panel collapse/expand functionality
 document.addEventListener("DOMContentLoaded", () => {
-  const collapseButtons = document.querySelectorAll(".collapse-btn");
-  
-  collapseButtons.forEach(button => {
-    button.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const targetId = button.getAttribute("data-target");
-      const target = document.getElementById(targetId);
-      
-      if (target) {
-        const isCollapsed = target.classList.contains("collapsed");
-        
-        if (isCollapsed) {
-          target.classList.remove("collapsed");
-          button.textContent = "−";
-        } else {
-          target.classList.add("collapsed");
-          button.textContent = "+";
-        }
-      }
-    });
-  });
+  // Stats panel: collapse hides entire panel, shows tiny tab
+  const statsPanel = document.getElementById("stats-panel");
+  const statsCollapse = document.getElementById("stats-collapse");
+  const statsExpand = document.getElementById("stats-expand");
 
-  // Also hide recenter button when stats content is collapsed
-  const recenterBtn = document.getElementById("recenterBtn");
-  if (recenterBtn) {
-    const statsContent = document.getElementById("stats-content");
-    const observer = new MutationObserver(() => {
-      recenterBtn.style.display = statsContent.classList.contains("collapsed") ? "none" : "";
+  if (statsCollapse && statsExpand && statsPanel) {
+    statsCollapse.addEventListener("click", (e) => {
+      e.stopPropagation();
+      statsPanel.classList.add("hidden");
+      statsExpand.classList.remove("hidden");
     });
-    observer.observe(statsContent, { attributes: true, attributeFilter: ["class"] });
+    statsExpand.addEventListener("click", (e) => {
+      e.stopPropagation();
+      statsPanel.classList.remove("hidden");
+      statsExpand.classList.add("hidden");
+    });
+  }
+
+  // Leaderboard panel: collapse hides entire leaderboard-div, shows tiny tab
+  const lbDiv = document.querySelector(".leaderboard-div");
+  const lbCollapse = document.getElementById("lb-collapse");
+  const lbExpand = document.getElementById("lb-expand");
+
+  if (lbCollapse && lbExpand && lbDiv) {
+    lbCollapse.addEventListener("click", (e) => {
+      e.stopPropagation();
+      lbDiv.classList.add("hidden");
+      lbExpand.classList.remove("hidden");
+    });
+    lbExpand.addEventListener("click", (e) => {
+      e.stopPropagation();
+      lbDiv.classList.remove("hidden");
+      lbExpand.classList.add("hidden");
+    });
+  }
+
+  // Follow toggle button
+  const followToggle = document.getElementById("followToggle");
+  window.followCamera = false;
+  if (followToggle) {
+    followToggle.addEventListener("click", (e) => {
+      e.stopPropagation();
+      window.followCamera = !window.followCamera;
+      followToggle.textContent = window.followCamera ? "ON" : "OFF";
+      followToggle.classList.toggle("on", window.followCamera);
+      followToggle.classList.toggle("off", !window.followCamera);
+      changed = true;
+    });
   }
 });

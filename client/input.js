@@ -141,33 +141,57 @@ window.onwheel = (e) => {
   changed = true;
 };
 
-function appendChatMessage(msg, color = "white") {
+function appendChatMessage(msg, color = "white", name = "", kills = 0) {
   const chatMessage = document.createElement("div");
-  chatMessage.innerText = msg;
-  if (color === "rainbow") {
-    setInterval(() => {
-      chatMessage.style.color = `hsl(${performance.now() / 12}, 50%, 50%)`;
-    }, 1000 / 60);
-  } else chatMessage.style.color = color;
   chatMessage.className = "chat-message";
+
+  if (name && kills === -1) {
+    // Server message
+    chatMessage.className = "chat-message server-msg";
+    chatMessage.innerText = msg;
+    chatMessage.style.color = "#ffcc66";
+  } else if (name) {
+    // Player message with name [kills]: text
+    chatMessage.style.borderLeftColor = color;
+
+    const nameSpan = document.createElement("span");
+    nameSpan.className = "chat-name";
+    nameSpan.style.color = color;
+    nameSpan.textContent = name;
+
+    const rankSpan = document.createElement("span");
+    rankSpan.className = "chat-rank";
+    rankSpan.textContent = ` [${kills}]`;
+
+    const sep = document.createTextNode(": ");
+
+    const msgSpan = document.createElement("span");
+    msgSpan.className = "chat-text";
+    msgSpan.textContent = msg;
+
+    chatMessage.appendChild(nameSpan);
+    chatMessage.appendChild(rankSpan);
+    chatMessage.appendChild(sep);
+    chatMessage.appendChild(msgSpan);
+  } else {
+    chatMessage.innerText = msg;
+    if (color === "rainbow") {
+      setInterval(() => {
+        chatMessage.style.color = `hsl(${performance.now() / 12}, 50%, 50%)`;
+      }, 1000 / 60);
+    } else {
+      chatMessage.style.color = color;
+    }
+  }
+
   chatMsgContainer.prepend(chatMessage);
   setTimeout(() => {
-    // animating fadeout after 5s
     chatMessage.animate(
       [
-        {
-          opacity: 1,
-        },
-        {
-          transform: "rotateZ(2deg)",
-          "font-size": "0rem",
-          opacity: 0,
-        },
+        { opacity: 1 },
+        { transform: "rotateZ(2deg)", "font-size": "0rem", opacity: 0 },
       ],
-      {
-        duration: 1000,
-        iterations: 1,
-      },
+      { duration: 1000, iterations: 1 },
     );
 
     setTimeout(() => {

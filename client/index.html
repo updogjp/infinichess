@@ -143,6 +143,7 @@
         autocomplete="off"
         spellcheck="false"
         maxlength="64"
+        placeholder="Press Enter to chat..."
       />
       <div class="chat-div"></div>
       <div class="leaderboard-div">
@@ -151,17 +152,18 @@
             <div class="online-indicator"></div>
             <span id="onlineCount">0 ONLINE</span>
           </div>
-          <button class="collapse-btn" data-target="leaderboard-content">−</button>
+          <button class="collapse-btn" id="lb-collapse">−</button>
         </div>
         <div id="leaderboard-content"></div>
       </div>
     </div>
+    <button id="lb-expand" class="panel-tab panel-tab-right hidden">LB</button>
 
     <!-- Statistics Panel -->
-    <div class="stats-panel">
+    <div class="stats-panel" id="stats-panel">
       <div class="stats-header">
         <span>STATS</span>
-        <button class="collapse-btn" data-target="stats-content">−</button>
+        <button class="collapse-btn" id="stats-collapse">−</button>
       </div>
       <div id="stats-content" class="stats-content">
         <div class="stat-row">
@@ -188,9 +190,21 @@
           <span class="stat-label">PIECES:</span>
           <span class="stat-value" id="stat-pieces">0</span>
         </div>
+        <div class="stat-row">
+          <span class="stat-label">RANGE:</span>
+          <span class="stat-value" id="stat-range">3</span>
+        </div>
+        <div class="stat-row toggle-row">
+          <span class="stat-label">FOLLOW:</span>
+          <button id="followToggle" class="toggle-btn off">OFF</button>
+        </div>
       </div>
       <button id="recenterBtn" class="recenter-btn">[ RECENTER ]</button>
     </div>
+    <button id="stats-expand" class="panel-tab panel-tab-left hidden">STATS</button>
+
+    <!-- Kill Feed -->
+    <div id="killFeed" class="kill-feed"></div>
 
     <!-- Piece Hover Tooltip -->
     <div id="pieceTooltip" class="piece-tooltip hidden"></div>

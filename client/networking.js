@@ -180,6 +180,16 @@ ws.addEventListener("message", function (data) {
       } catch (e) {}
     }
 
+    // Kill feed notification for captures
+    if (endPiece.type !== 0 && endPiece.team !== 0) {
+      const attackerInfo = window.playerNamesMap && window.playerNamesMap[playerId];
+      const victimInfo = window.playerNamesMap && window.playerNamesMap[endPiece.team];
+      const attackerName = attackerInfo ? attackerInfo.name : (playerId >= 10000 ? "AI" : `#${playerId}`);
+      const victimName = victimInfo ? victimInfo.name : (endPiece.team >= 10000 ? "AI" : `#${endPiece.team}`);
+      const pieceName = PIECE_NAMES[endPiece.type] || "piece";
+      showKillFeed(attackerName, victimName, pieceName, playerId === selfId);
+    }
+
     // Check if our piece was captured (game over when we lose our piece)
     if (
       endPiece.team === selfId &&
@@ -265,12 +275,16 @@ ws.addEventListener("message", function (data) {
     // Add to chat log
     if (playerId !== 65534) {
       const color = teamToColor(playerId);
-      appendChatMessage(txt, `rgb(${color.r},${color.g},${color.b})`);
+      const colorStr = `rgb(${color.r},${color.g},${color.b})`;
+      const info = window.playerNamesMap && window.playerNamesMap[playerId];
+      const name = info ? info.name : `#${playerId}`;
+      const kills = info ? info.kills : 0;
+      appendChatMessage(txt, colorStr, name, kills);
 
       // Show floating bubble
       showChatBubble(playerId, txt);
     } else {
-      appendChatMessage(txt, "rainbow");
+      appendChatMessage(txt, "rainbow", "[Server]", -1);
     }
     return;
   }
@@ -527,86 +541,116 @@ function sendPlayerInfo() {
 }
 
 // Floating chat bubbles
+const MAX_BUBBLES_PER_PLAYER = 3;
+
 function showChatBubble(playerId, text) {
   // Find player's piece (any piece owned by them)
   const pieces = spatialHash.getAllPieces();
-  let kingPiece = null;
+  let playerPiece = null;
 
   for (const piece of pieces) {
     if (piece.team === playerId && piece.type !== 0) {
-      kingPiece = piece;
+      playerPiece = piece;
       break;
     }
   }
 
-  if (!kingPiece) return;
+  if (!playerPiece) return;
 
-  // Create bubble element
+  // Get or create bubble array for this player
+  if (!activeChatBubbles.has(playerId)) {
+    activeChatBubbles.set(playerId, []);
+  }
+  const bubbles = activeChatBubbles.get(playerId);
+
+  // If at max, remove the oldest bubble
+  if (bubbles.length >= MAX_BUBBLES_PER_PLAYER) {
+    const oldest = bubbles.shift();
+    oldest.element.remove();
+    clearTimeout(oldest.fadeTimer);
+  }
+
+  // Create bubble element with sender name
   const bubble = document.createElement("div");
   bubble.className = "chat-bubble";
-  bubble.textContent = text.substring(0, 32); // Max 32 chars
+
+  const info = window.playerNamesMap && window.playerNamesMap[playerId];
+  const senderName = info ? info.name : "";
+  if (senderName) {
+    const nameEl = document.createElement("span");
+    nameEl.className = "bubble-name";
+    nameEl.textContent = senderName + ": ";
+    bubble.appendChild(nameEl);
+  }
+  const msgEl = document.createTextNode(text.substring(0, 32));
+  bubble.appendChild(msgEl);
   document.body.appendChild(bubble);
 
-  // Store bubble data
   const bubbleData = {
     text: text,
     time: Date.now(),
     element: bubble,
-    pieceX: kingPiece.x,
-    pieceY: kingPiece.y,
+    pieceX: playerPiece.x,
+    pieceY: playerPiece.y,
     playerId: playerId,
+    fadeTimer: null,
   };
 
-  activeChatBubbles.set(playerId, bubbleData);
+  bubbles.push(bubbleData);
 
-  // Remove after 5 seconds
-  setTimeout(() => {
-    if (activeChatBubbles.has(playerId)) {
-      const data = activeChatBubbles.get(playerId);
-      if (data.element === bubble) {
-        bubble.classList.add("fading");
-        setTimeout(() => {
-          bubble.remove();
-          activeChatBubbles.delete(playerId);
-        }, 500);
-      }
-    }
+  // Remove this specific bubble after 5 seconds
+  bubbleData.fadeTimer = setTimeout(() => {
+    const arr = activeChatBubbles.get(playerId);
+    if (!arr) return;
+    bubble.classList.add("fading");
+    setTimeout(() => {
+      bubble.remove();
+      const idx = arr.indexOf(bubbleData);
+      if (idx !== -1) arr.splice(idx, 1);
+      if (arr.length === 0) activeChatBubbles.delete(playerId);
+    }, 500);
   }, 5000);
 }
 
 // Update bubble positions in render loop
 window.updateChatBubbles = function () {
-  activeChatBubbles.forEach((data, playerId) => {
-    // Update piece position (in case piece moved)
+  const BUBBLE_SPACING = 28;
+
+  activeChatBubbles.forEach((bubbles, playerId) => {
+    if (!bubbles || bubbles.length === 0) return;
+
+    // Update piece position from spatial hash
     const pieces = spatialHash.getAllPieces();
+    let pieceX = bubbles[0].pieceX;
+    let pieceY = bubbles[0].pieceY;
     for (const piece of pieces) {
       if (piece.team === playerId && piece.type !== 0) {
-        data.pieceX = piece.x;
-        data.pieceY = piece.y;
+        pieceX = piece.x;
+        pieceY = piece.y;
         break;
       }
     }
 
-    // Calculate screen position from world coords using camera transform
-    const worldX = data.pieceX * squareSize + squareSize / 2;
-    const worldY = data.pieceY * squareSize - 20;
+    // Calculate base screen position above the piece
+    const worldX = pieceX * squareSize + squareSize / 2;
+    const worldY = pieceY * squareSize - 20;
     const screenX = (worldX + camera.x) * camera.scale + canvas.w / 2;
     const screenY = (worldY + camera.y) * camera.scale + canvas.h / 2;
 
-    // Update bubble position
-    data.element.style.left = screenX + "px";
-    data.element.style.top = screenY + "px";
+    const offScreen = screenX < -100 || screenX > canvas.w + 100 ||
+      screenY < -100 || screenY > canvas.h + 100;
 
-    // Check if off-screen
-    if (
-      screenX < -100 ||
-      screenX > canvas.w + 100 ||
-      screenY < -100 ||
-      screenY > canvas.h + 100
-    ) {
-      data.element.style.display = "none";
-    } else {
-      data.element.style.display = "block";
+    // Position each bubble, newest at bottom (index 0 = oldest = highest)
+    for (let i = 0; i < bubbles.length; i++) {
+      const b = bubbles[i];
+      b.pieceX = pieceX;
+      b.pieceY = pieceY;
+
+      // Stack from bottom up: newest (last) is closest to piece
+      const offsetIndex = bubbles.length - 1 - i;
+      b.element.style.left = screenX + "px";
+      b.element.style.top = (screenY - offsetIndex * BUBBLE_SPACING) + "px";
+      b.element.style.display = offScreen ? "none" : "block";
     }
   });
 };
