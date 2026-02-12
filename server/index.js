@@ -1498,13 +1498,6 @@ setInterval(() => {
   global.fileServedIps = {};
 }, 20 * 1000);
 
-app.get("/config", (res, req) => {
-  res.writeHeader("Content-Type", "application/json");
-  res.end(JSON.stringify({
-    turnstileSiteKey: process.env.TURNSTILE_SITE_KEY || "",
-  }));
-});
-
 app.get("/", (res, req) => {
   const ip = getIp(res, req);
   if (servedIps[ip] === undefined) servedIps[ip] = 0;
@@ -1524,6 +1517,13 @@ app.get("/", (res, req) => {
   }
 
   res.end(fsSync.readFileSync("client/index.html"));
+});
+
+app.get("/config", (res, req) => {
+  res.writeHeader("Content-Type", "application/json");
+  res.end(JSON.stringify({
+    turnstileSiteKey: process.env.TURNSTILE_SITE_KEY || "",
+  }));
 });
 
 global.fileServedIps = {};

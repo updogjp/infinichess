@@ -85,6 +85,14 @@ window.onTurnstileSuccess = (token) => {
     buf[0] = tokenBytes.length;
     buf.set(tokenBytes, 1);
     ws.send(buf);
+    
+    // Show player setup modal after captcha is verified
+    setTimeout(() => {
+      console.log("✓ Showing player setup modal after captcha verification");
+      document.getElementById("fullscreenDiv").classList.add("hidden");
+      document.getElementById("playerSetupDiv").classList.remove("hidden");
+      initPlayerSetup();
+    }, 500);
   }
 };
 
@@ -813,14 +821,12 @@ window.updateChatBubbles = function () {
   });
 };
 
-// Captcha disabled - go straight to player setup
+// Wait for WebSocket connection before showing captcha
 {
   const checkConnection = () => {
     if (ws.readyState === WebSocket.OPEN) {
-      console.log("✓ WebSocket connected, showing player setup modal");
-      document.getElementById("fullscreenDiv").classList.add("hidden");
-      document.getElementById("playerSetupDiv").classList.remove("hidden");
-      initPlayerSetup();
+      console.log("✓ WebSocket connected, captcha screen ready");
+      // Captcha screen is already visible, waiting for user to complete it
     } else {
       console.log(`⏳ Waiting for WebSocket... state=${ws.readyState}`);
       setTimeout(checkConnection, 100);
