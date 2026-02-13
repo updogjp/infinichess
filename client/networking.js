@@ -94,16 +94,13 @@ ws.addEventListener("message", function (data) {
       `🔄 Viewport sync: selfId=${selfId}, pieces=${count}, infiniteMode=${window.infiniteMode}, isFirstSync=${isFirstSync}`,
     );
 
-    // Track existing pieces before updating for fade transitions
-    const oldPieceKeys = new Set();
+    // Diff-based viewport sync (P6) — only add/remove changed pieces
+    // Build map of old pieces for comparison
     const oldPieces = spatialHash.getAllPieces();
+    const oldPieceMap = new Map(); // "x,y" -> {type, team}
     for (const p of oldPieces) {
-      if (p.type !== 0) oldPieceKeys.add(`${p.x},${p.y}`);
+      if (p.type !== 0) oldPieceMap.set(`${p.x},${p.y}`, { type: p.type, team: p.team });
     }
-
-    // Clear and repopulate spatial hash with viewport pieces
-    spatialHash.chunks.clear();
-    spatialHash.pieceCount = 0;
 
     let i = 4; // Start after magic, selfId, count, infiniteMode
     let myPieceX = null;
@@ -115,18 +112,28 @@ ws.addEventListener("message", function (data) {
       const y = i32[i++];
       const type = i32[i++];
       const team = i32[i++];
-      spatialHash.set(x, y, type, team);
-      newPieceKeys.add(`${x},${y}`);
+      const key = `${x},${y}`;
+      newPieceKeys.add(key);
 
-      // Fade in pieces that weren't in the old set
-      if (!oldPieceKeys.has(`${x},${y}`)) {
-        startFadeIn(x, y);
+      const old = oldPieceMap.get(key);
+      // Only update spatial hash if piece changed or is new
+      if (!old || old.type !== type || old.team !== team) {
+        spatialHash.set(x, y, type, team);
+        if (!old) startFadeIn(x, y); // Fade in only truly new pieces
       }
 
       // Find player's piece to center camera (any piece owned by us)
       if (team === selfId && myPieceX === null) {
         myPieceX = x;
         myPieceY = y;
+      }
+    }
+
+    // Remove pieces that are no longer in the viewport
+    for (const [key, old] of oldPieceMap) {
+      if (!newPieceKeys.has(key)) {
+        const [ox, oy] = key.split(",").map(Number);
+        spatialHash.set(ox, oy, 0, 0);
       }
     }
 
@@ -325,6 +332,72 @@ ws.addEventListener("message", function (data) {
     return;
   }
 
+  // Session token assignment from server (magic 55559 + 32-byte token)
+  else if (msg[0] === 55559 && data.data.byteLength === 34) {
+    const token = decodeText(u8, 2, 34);
+    window._sessionToken = token;
+    try { sessionStorage.setItem('infinichess_session', token); } catch (e) {}
+    console.log('🔑 Session token received');
+    return;
+  }
+
+  // Session resume response (magic 55558)
+  else if (msg[0] === 55558) {
+    const status = msg[1];
+    if (status === 1 && data.data.byteLength >= 19) {
+      // Session restored — read player data
+      const restoredId = msg[2];
+      const restoredKills = msg[3];
+      const restoredPieceType = msg[4];
+      const resumeDV = new DataView(data.data);
+      const restoredX = resumeDV.getInt32(10, true);
+      const restoredY = resumeDV.getInt32(14, true);
+      const nameLen = u8[18];
+      const restoredName = decodeText(u8, 19, 19 + nameLen);
+
+      selfId = restoredId;
+      window.playerName = restoredName;
+      window._hadMyPiece = true;
+
+      // Center camera on restored piece
+      camera.x = -(restoredX * squareSize + squareSize / 2);
+      camera.y = -(restoredY * squareSize + squareSize / 2);
+
+      // Hide setup modal, show game UI
+      const setupDiv = document.getElementById("playerSetupDiv");
+      if (setupDiv) setupDiv.classList.add("hidden");
+      const chatContainer = document.querySelector(".chatContainer");
+      if (chatContainer) chatContainer.classList.remove("hidden");
+      const statsPanel = document.getElementById("stats-panel");
+      const statsExpand = document.getElementById("stats-expand");
+      if (window.innerWidth <= 768) {
+        if (statsExpand) statsExpand.classList.remove("hidden");
+      } else {
+        if (statsPanel) statsPanel.classList.remove("hidden");
+      }
+
+      gameOver = false;
+      gameOverAlpha = 0;
+      window.gameOverKiller = null;
+
+      window.showToast("Session restored!", "info", 2000);
+      console.log(`✅ Session resumed: ${restoredName} (#${restoredId}) at (${restoredX},${restoredY}) with ${restoredKills} kills`);
+    } else {
+      // Session rejected — clear stored token, flush queued messages, show setup modal
+      window._sessionToken = null;
+      selfId = -1;
+      try { sessionStorage.removeItem('infinichess_session'); } catch (e) {}
+      console.log('❌ Session resume rejected — starting fresh');
+      // Flush any queued messages from before the reconnect
+      for (let q = 0; q < msgs.length; q++) {
+        ws.send(msgs[q]);
+      }
+      msgs.length = 0;
+    }
+    changed = true;
+    return;
+  }
+
   // Neutralize team (player disconnected)
   else if (msg[0] === 64535 && msg[1] === 12345) {
     const teamsToNeutralize = [];
@@ -451,6 +524,22 @@ ws.onopen = () => {
     ws.send(data);
   };
 
+  // On reconnect, try to resume session before sending queued messages
+  const savedToken = window._sessionToken || (() => {
+    try { return sessionStorage.getItem('infinichess_session'); } catch (e) { return null; }
+  })();
+  if (savedToken && savedToken.length === 32 && selfId !== -1) {
+    console.log('🔄 Attempting session resume...');
+    const resumeBuf = new Uint8Array(34);
+    const resumeU16 = new Uint16Array(resumeBuf.buffer, 0, 1);
+    resumeU16[0] = 55557; // Magic: session resume request
+    const tokenBytes = new TextEncoder().encode(savedToken);
+    for (let t = 0; t < 32; t++) resumeBuf[2 + t] = tokenBytes[t];
+    ws.send(resumeBuf);
+    // Don't flush queued messages yet — wait for session response
+    return;
+  }
+
   for (let i = 0; i < msgs.length; i++) {
     window.send(msgs[i]);
   }
@@ -499,9 +588,7 @@ setInterval(() => {
 }, 500);
 
 // Player setup modal
-let captchaCompleted = false;
 let playerSetupCompleted = false;
-
 function initPlayerSetup() {
   console.log("🎮 Initializing player setup modal");
 
@@ -861,27 +948,3 @@ function decodeText(u8array, startPos = 0, endPos = Infinity) {
   return decoder.decode(u8array.slice(startPos, endPos));
 }
 
-window.addChatMessage = (message, type) => {
-  const div = document.createElement("div");
-  if (type !== "system") div.classList.add("chat-message");
-  else div.classList.add("system-message");
-
-  const chatPrefixMap = {
-    normal: "",
-    system: '<span class="rainbow">[SERVER]</span>',
-    dev: '<span class="rainbow">[DEV]</span>',
-    guest: '<span class="guest">',
-  };
-
-  const chatSuffixMap = {
-    normal: "",
-    system: "",
-    dev: "",
-    guest: "</span>",
-  };
-
-  div.innerHTML = chatPrefixMap[type] + message + chatSuffixMap[type];
-  const chatMessageDiv = document.querySelector(".chat-div");
-  chatMessageDiv.appendChild(div);
-  chatMessageDiv.scrollTop = chatMessageDiv.scrollHeight;
-};

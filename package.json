@@ -28,6 +28,7 @@
     "node": "20.x"
   },
   "dependencies": {
+    "bad-words": "^4.0.0",
     "posthog-js": "^1.347.0",
     "uWebSockets.js": "https://github.com/uNetworking/uWebSockets.js/archive/refs/tags/v20.51.0.tar.gz"
   },

@@ -1,8 +1,11 @@
 import uWS from "uWebSockets.js";
 import fs from "fs/promises";
 import fsSync from "fs";
+import pathModule from "path";
 import "../shared/constants.js";
-import badWords from "./badwords.js";
+import { Filter } from "bad-words";
+
+const profanityFilter = new Filter();
 
 
 // Simple color name generator (replacing heavy color-2-name library)
@@ -91,7 +94,36 @@ const playerMetadata = new Map(); // playerId -> {name, color, kingX, kingY}
 // Spawn immunity tracking: playerId -> expiry timestamp
 const spawnImmunity = new Map();
 
+let teamsToNeutralize = [];
+
+// Session reconnection system — allows players to resume after brief disconnects
+const SESSION_TTL = 30 * 1000; // 30 seconds to reconnect
+const sessions = new Map(); // token -> { id, name, color, kills, kingX, kingY, pieceType, expiry, neutralizeTimer }
+
+function generateSessionToken() {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let token = '';
+  for (let i = 0; i < 32; i++) token += chars[Math.floor(Math.random() * chars.length)];
+  return token;
+}
+
+// Clean up expired sessions periodically
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, session] of sessions) {
+    if (now > session.expiry) {
+      // Session expired — neutralize their pieces now
+      teamsToNeutralize.push(session.id);
+      leaderboard.delete(session.id);
+      playerMetadata.delete(session.id);
+      sessions.delete(token);
+      console.log(`[Session] Expired: ${session.name} (#${session.id})`);
+    }
+  }
+}, 5000);
+
 let leaderboard = new Map();
+let leaderboardDirty = false; // Debounce flag for leaderboard broadcasts (P3)
 
 // Persistent all-time top 3 leaderboard (gold/silver/bronze)
 const TOP3_SAVE_PATH = "server/top3.json";
@@ -114,7 +146,10 @@ function loadTop3() {
 
 function saveTop3() {
   try {
-    fsSync.writeFileSync(TOP3_SAVE_PATH, JSON.stringify(allTimeTop3));
+    // Write-then-rename to prevent corruption on crash (E2)
+    const tmpPath = TOP3_SAVE_PATH + ".tmp";
+    fsSync.writeFileSync(tmpPath, JSON.stringify(allTimeTop3));
+    fsSync.renameSync(tmpPath, TOP3_SAVE_PATH);
   } catch (e) {
     console.error("[Persistence] Failed to save top 3:", e);
   }
@@ -307,53 +342,32 @@ function move(startX, startY, finX, finY, playerId) {
     setSquare(startX, startY, endPiece.type, playerId);
   }
 
-  // AI piece capture: increment score for the capturing player
-  if (
-    endPiece.type !== 0 &&
-    endPiece.team >= AI_ID_MIN &&
-    playerId < AI_ID_MIN
-  ) {
-    const currentKills = leaderboard.get(playerId) || 0;
-    leaderboard.set(playerId, currentKills + 1);
-    broadcastToAll(sendLeaderboard());
+  // Handle captures — increment kills, evolve, update leaderboard
+  if (isCapture && endPiece.team !== playerId) {
+    // Player piece capture: eliminate the victim player
+    if (endPiece.team > 0 && endPiece.team < AI_ID_MIN && clients[endPiece.team] !== undefined) {
+      const victimId = endPiece.team;
+      const victimMeta = playerMetadata.get(victimId);
+      const victimLabel = victimMeta ? victimMeta.name : `#${victimId}`;
+      console.log(`[Kill] ${playerLabel} eliminated ${victimLabel} at ${toChessNotation(finX, finY)}`);
 
-    // Check all-time top 3
-    const killerMeta = playerMetadata.get(playerId);
-    if (killerMeta) checkTop3(killerMeta.name, currentKills + 1, killerMeta.color);
+      clients[victimId].dead = true;
+      clients[victimId].respawnTime = Date.now() + global.respawnTime - 500;
+      teamsToNeutralize.push(victimId);
+      leaderboard.set(victimId, 0);
+    }
 
-    // Auto-evolve: check if player should transform
-    checkEvolution(playerId, finX, finY, currentKills + 1);
-  }
+    // Increment kills for any non-neutral capture (AI or player victim)
+    if (endPiece.team !== 0) {
+      const currentKills = leaderboard.get(playerId) || 0;
+      leaderboard.set(playerId, currentKills + 1);
+      leaderboardDirty = true;
 
-  // Player piece capture: eliminate player (works for any piece type, not just king)
-  if (
-    endPiece.type !== 0 &&
-    endPiece.team !== 0 &&
-    endPiece.team < AI_ID_MIN &&
-    clients[endPiece.team] !== undefined
-  ) {
-    const victimId = endPiece.team;
-    const victimMeta = playerMetadata.get(victimId);
-    const victimLabel = victimMeta ? victimMeta.name : `#${victimId}`;
-    console.log(`[Kill] ${playerLabel} eliminated ${victimLabel} at ${toChessNotation(finX, finY)}`);
+      // Check all-time top 3
+      const killerMeta = playerMetadata.get(playerId);
+      if (killerMeta) checkTop3(killerMeta.name, currentKills + 1, killerMeta.color);
 
-    clients[victimId].dead = true;
-    clients[victimId].respawnTime = Date.now() + global.respawnTime - 500;
-    teamsToNeutralize.push(victimId);
-
-    // Update leaderboard
-    const currentKills = leaderboard.get(playerId) || 0;
-    leaderboard.set(playerId, currentKills + 1);
-    leaderboard.set(victimId, 0);
-
-    broadcastToAll(sendLeaderboard());
-
-    // Check all-time top 3
-    const killerMeta2 = playerMetadata.get(playerId);
-    if (killerMeta2) checkTop3(killerMeta2.name, currentKills + 1, killerMeta2.color);
-
-    // Auto-evolve: check if player should transform
-    if (playerId < AI_ID_MIN) {
+      // Auto-evolve: check if piece should transform
       checkEvolution(playerId, finX, finY, currentKills + 1);
     }
   }
@@ -858,14 +872,7 @@ function moveAIPieces() {
     // Execute move
     move(aiPiece.x, aiPiece.y, newX, newY, aiId);
 
-    // Update AI kill count on leaderboard and check for evolution
-    if (isCapture && leaderboard.has(aiId)) {
-      const newKills = (leaderboard.get(aiId) || 0) + 1;
-      leaderboard.set(aiId, newKills);
-      
-      // AI pieces evolve using same thresholds as players
-      checkEvolution(aiId, newX, newY, newKills);
-    }
+    // Kill counting and evolution are handled inside move() — no extra increment needed here
 
     if (AI_CONFIG.verboseLog) {
       const meta = playerMetadata.get(aiId);
@@ -893,20 +900,19 @@ function moveAIPieces() {
 if (AI_CONFIG.enabled) {
   setInterval(spawnAIPieces, 2000);
   setInterval(moveAIPieces, 1000);
-  // Periodic leaderboard broadcast so AI kills are reflected
+  // Debounced leaderboard broadcast — only sends when dirty (P3)
   setInterval(() => {
-    if (Object.keys(clients).length > 0) {
+    if (leaderboardDirty && Object.keys(clients).length > 0) {
+      leaderboardDirty = false;
       broadcastToAll(sendLeaderboard());
     }
-  }, 5000);
+  }, 500);
   console.log(
     `[AI] System enabled - base ${AI_CONFIG.baseCount}, solo bonus ${AI_CONFIG.soloBonus}, +${AI_CONFIG.piecesPerPlayer}/player, max ${AI_CONFIG.maxAI}`,
   );
 } else {
   console.log(`[AI] System disabled`);
 }
-
-let teamsToNeutralize = [];
 
 // Neutralize disconnected players' pieces
 setInterval(() => {
@@ -915,12 +921,14 @@ setInterval(() => {
   const teamsToRemove = [...teamsToNeutralize];
   teamsToNeutralize = [];
 
+  // Use Set for O(1) lookups instead of Array.includes (P2)
+  const teamSet = new Set(teamsToRemove);
+
   // Find and neutralize all pieces belonging to disconnected teams
   const allPieces = spatialHash.getAllPieces();
 
   for (const piece of allPieces) {
-    if (teamsToRemove.includes(piece.team)) {
-      // Neutralize all pieces from disconnected player
+    if (teamSet.has(piece.team)) {
       spatialHash.set(piece.x, piece.y, piece.type, 0);
       setSquare(piece.x, piece.y, piece.type, 0);
     }
@@ -935,20 +943,6 @@ setInterval(() => {
   }
   broadcastToAll(buf);
 }, 440);
-
-// Cleanup captcha keys
-let usedCaptchaKeys = {};
-setInterval(
-  () => {
-    const now = Date.now();
-    for (const key in usedCaptchaKeys) {
-      if (now - usedCaptchaKeys[key] > 2 * 60 * 1000) {
-        delete usedCaptchaKeys[key];
-      }
-    }
-  },
-  2 * 60 * 1000,
-);
 
 // World Persistence - Save/Load
 const WORLD_SAVE_PATH = "server/world.dat";
@@ -972,7 +966,10 @@ async function saveWorld() {
       buf[i++] = piece.type;
     }
 
-    await fs.writeFile(WORLD_SAVE_PATH, Buffer.from(buf.buffer));
+    // Write-then-rename to prevent corruption on crash (E2)
+    const tmpPath = WORLD_SAVE_PATH + ".tmp";
+    await fs.writeFile(tmpPath, Buffer.from(buf.buffer));
+    await fs.rename(tmpPath, WORLD_SAVE_PATH);
   } catch (e) {
     console.error("[Persistence] Failed to save world:", e);
   }
@@ -1021,7 +1018,10 @@ async function savePlayerMetadata() {
       });
     }
 
-    await fs.writeFile(PLAYER_SAVE_PATH, JSON.stringify(data));
+    // Write-then-rename to prevent corruption on crash (E2)
+    const tmpPath = PLAYER_SAVE_PATH + ".tmp";
+    await fs.writeFile(tmpPath, JSON.stringify(data));
+    await fs.rename(tmpPath, PLAYER_SAVE_PATH);
   } catch (e) {
     console.error("[Persistence] Failed to save players:", e);
   }
@@ -1109,6 +1109,8 @@ global.app = uWS
       ws.chatMsgsLastWindow = 0;
       ws.lastChatWindowTime = 0;
       ws.camera = { x: 0, y: 0, scale: 1 };
+      ws.msgCount = 0;
+      ws.msgWindowStart = Date.now();
 
       ws.subscribe("global");
 
@@ -1123,16 +1125,28 @@ global.app = uWS
     },
 
     message: (ws, data) => {
+      // Per-connection message rate limiting (R3) — max 60 msgs/sec
+      const now = Date.now();
+      if (now - ws.msgWindowStart > 1000) {
+        ws.msgCount = 0;
+        ws.msgWindowStart = now;
+      }
+      ws.msgCount++;
+      if (ws.msgCount > 60) return; // Silently drop excessive messages
+
       const u8 = new Uint8Array(data);
 
       // Camera position update (client sends grid coordinates as Int32)
       if (data.byteLength === 16) {
         const decoded = new Int32Array(data);
         if (decoded[0] === 55552) {
+          // Validate camera coords are finite (R1 extension)
+          if (!Number.isFinite(decoded[1]) || !Number.isFinite(decoded[2]) || !Number.isFinite(decoded[3])) return;
+
           // Client sends grid coords directly
           ws.camera.x = decoded[1];
           ws.camera.y = decoded[2];
-          ws.camera.scale = decoded[3] / 100; // Scale stored as integer * 100
+          ws.camera.scale = Math.max(0.01, Math.min(10, decoded[3] / 100)); // Clamp scale
 
           // Send viewport syncs for any verified client (players + spectators)
           if (ws.verified) {
@@ -1146,12 +1160,90 @@ global.app = uWS
         }
       }
 
-      // Player info (name and color and piece type)
-      // Use DataView to safely read u16 from potentially odd-length buffer
+      // Session resume (magic 55557 as first 2 bytes + 32-byte token string)
+      // Client sends this on reconnect to restore their previous session
       const dv = new DataView(data);
       const firstU16 = data.byteLength >= 2 ? dv.getUint16(0, true) : 0;
+      if (firstU16 === 55557 && data.byteLength >= 34) {
+        const token = decodeText(u8, 2, 34);
+
+        const session = sessions.get(token);
+        if (!session) {
+          // Session not found or expired — send rejection (magic 55558, status 0)
+          const rejectBuf = new Uint8Array(4);
+          const rejectU16 = new Uint16Array(rejectBuf.buffer);
+          rejectU16[0] = 55558;
+          rejectU16[1] = 0; // 0 = rejected
+          send(ws, rejectBuf);
+          console.log(`[Session] Resume rejected — token not found`);
+          return;
+        }
+
+        // Restore the session — reuse the old player ID
+        const oldId = ws.id;
+        delete clients[oldId];
+        leaderboard.delete(oldId);
+
+        ws.id = session.id;
+        clients[ws.id] = ws;
+        ws.verified = true;
+        ws.dead = false;
+        ws.sessionToken = token;
+        ws.camera.x = session.kingX;
+        ws.camera.y = session.kingY;
+
+        // Restore metadata and leaderboard
+        playerMetadata.set(ws.id, {
+          name: session.name,
+          color: session.color,
+          kingX: session.kingX,
+          kingY: session.kingY,
+        });
+        leaderboard.set(ws.id, session.kills);
+
+        // Remove the session from the store
+        sessions.delete(token);
+
+        // Grant brief spawn immunity on reconnect
+        spawnImmunity.set(ws.id, Date.now() + SPAWN_IMMUNITY_MS);
+        const immuneBuf = new Uint16Array(3);
+        immuneBuf[0] = 55556;
+        immuneBuf[1] = ws.id;
+        immuneBuf[2] = Math.floor(SPAWN_IMMUNITY_MS / 100);
+        broadcastToAll(immuneBuf);
+
+        // Send acceptance (magic 55558, status 1) + session data
+        // Format: [magic(2), status(2), id(2), kills(2), pieceType(2), kingX(4), kingY(4), nameLen(1), ...name]
+        const nameBuf = new TextEncoder().encode(session.name);
+        const acceptLen = 10 + 8 + 1 + nameBuf.length;
+        const padLen = acceptLen % 2 === 0 ? acceptLen : acceptLen + 1;
+        const acceptBuf = new Uint8Array(padLen);
+        const acceptU16 = new Uint16Array(acceptBuf.buffer, 0, 5);
+        acceptU16[0] = 55558;
+        acceptU16[1] = 1; // 1 = accepted
+        acceptU16[2] = ws.id;
+        acceptU16[3] = session.kills;
+        acceptU16[4] = session.pieceType;
+        // Write kingX and kingY as Int32 at byte offset 10
+        const acceptDV = new DataView(acceptBuf.buffer);
+        acceptDV.setInt32(10, session.kingX, true);
+        acceptDV.setInt32(14, session.kingY, true);
+        acceptBuf[18] = nameBuf.length;
+        for (let j = 0; j < nameBuf.length; j++) acceptBuf[19 + j] = nameBuf[j];
+        send(ws, acceptBuf);
+
+        console.log(`[Session] Resumed: ${session.name} (#${ws.id}) at (${session.kingX},${session.kingY}) with ${session.kills} kills`);
+
+        // Send viewport centered on their piece
+        sendViewportState(ws, session.kingX, session.kingY);
+        leaderboardDirty = true;
+        return;
+      }
+
+      // Player info (name and color and piece type)
       if (firstU16 === 55551) {
-        const nameLength = u8[2];
+        const nameLength = Math.min(u8[2] || 0, data.byteLength - 8, 32); // Cap name read length
+        if (data.byteLength < 8) return; // Malformed packet
         const r = u8[3];
         const g = u8[4];
         const b = u8[5];
@@ -1159,9 +1251,10 @@ global.app = uWS
 
         let name = decodeText(u8, 8, 8 + nameLength);
 
-        // Sanitize name
+        // Sanitize name — strip special chars, filter profanity server-side
         name = name.replace(/[^a-zA-Z0-9_\-\s]/g, "").substring(0, 16);
         if (name.length === 0) name = "Player" + ws.id;
+        name = cleanBadWords(name);
 
         // Store player metadata
         playerMetadata.set(ws.id, {
@@ -1181,7 +1274,11 @@ global.app = uWS
         broadcastToAll(sendLeaderboard());
 
         // Spawn the player immediately after receiving their info
-        if (!ws.dead) {
+        // Block duplicate spawns — only spawn if not already alive with a piece on the board (R4)
+        const existingMeta = playerMetadata.get(ws.id);
+        const alreadySpawned = ws.verified && !ws.dead && existingMeta && existingMeta.kingX !== undefined
+          && spatialHash.get(existingMeta.kingX, existingMeta.kingY).team === ws.id;
+        if (!ws.dead && !alreadySpawned) {
           console.log(`[Spawn] Player ${ws.id} (${name}) spawning... ws.closed=${ws.closed}`);
 
           const spawnPieceType = globalThis.PIECE_KING; // 6
@@ -1226,6 +1323,16 @@ global.app = uWS
           spawnBuf[3] = spawnPieceType;
           spawnBuf[4] = ws.id;
           send(ws, spawnBuf.buffer);
+
+          // Generate and send session token for reconnection
+          ws.sessionToken = generateSessionToken();
+          const tokenBuf = new Uint8Array(2 + 32);
+          const tokenU16 = new Uint16Array(tokenBuf.buffer, 0, 1);
+          tokenU16[0] = 55559; // Magic: session token assignment
+          const tokenBytes = new TextEncoder().encode(ws.sessionToken);
+          for (let t = 0; t < 32; t++) tokenBuf[2 + t] = tokenBytes[t];
+          send(ws, tokenBuf);
+
           console.log(`[Spawn] ✓ Player ${ws.id} (${name}) at (${spawn.x}, ${spawn.y})`);
         }
 
@@ -1277,6 +1384,15 @@ global.app = uWS
         meta.kingX = spawn.x;
         meta.kingY = spawn.y;
 
+        // Generate new session token for the respawned player
+        ws.sessionToken = generateSessionToken();
+        const tokenBuf = new Uint8Array(2 + 32);
+        const tokenU16 = new Uint16Array(tokenBuf.buffer, 0, 1);
+        tokenU16[0] = 55559;
+        const tokenBytes = new TextEncoder().encode(ws.sessionToken);
+        for (let t = 0; t < 32; t++) tokenBuf[2 + t] = tokenBytes[t];
+        send(ws, tokenBuf);
+
         console.log(`[Respawn] ✓ Player ${ws.id} (${meta.name}) at ${toChessNotation(spawn.x, spawn.y)}`);
         sendViewportState(ws, spawn.x, spawn.y);
         return;
@@ -1314,10 +1430,8 @@ global.app = uWS
         const txt = decodeText(data, 2);
         if (txt.length > 64) return;
 
-        let chatMessage = txt;
+        let chatMessage = cleanBadWords(txt);
         let id = ws.id;
-
-        if (isBadWord(chatMessage)) return;
 
         // /announce is admin-only (disabled for regular players)
         if (chatMessage.slice(0, 9) === "/announce") {
@@ -1346,6 +1460,10 @@ global.app = uWS
         const startY = moveData[2];
         const finX = moveData[3];
         const finY = moveData[4];
+
+        // Validate coordinates are finite integers (R1)
+        if (!Number.isFinite(startX) || !Number.isFinite(startY) ||
+            !Number.isFinite(finX) || !Number.isFinite(finY)) return;
 
         const startPiece = spatialHash.get(startX, startY);
 
@@ -1393,29 +1511,62 @@ global.app = uWS
       delete clients[ws.id];
       ws.closed = true;
 
-      if (ws.id) teamsToNeutralize.push(ws.id);
-      spawnImmunity.delete(ws.id);
+      const meta = playerMetadata.get(ws.id);
+      const kills = leaderboard.get(ws.id) || 0;
 
-      if (leaderboard.has(ws.id)) {
+      // If the player was alive with a piece, save session for reconnection
+      if (meta && meta.name && !ws.dead && ws.verified) {
+        const token = ws.sessionToken || generateSessionToken();
+        const currentPiece = spatialHash.get(meta.kingX, meta.kingY);
+        const pieceType = (currentPiece && currentPiece.team === ws.id) ? currentPiece.type : 0;
+
+        if (pieceType !== 0) {
+          sessions.set(token, {
+            id: ws.id,
+            name: meta.name,
+            color: meta.color,
+            kills: kills,
+            kingX: meta.kingX,
+            kingY: meta.kingY,
+            pieceType: pieceType,
+            expiry: Date.now() + SESSION_TTL,
+          });
+          console.log(`[Session] Saved: ${meta.name} (#${ws.id}) — ${SESSION_TTL / 1000}s to reconnect`);
+          // Don't neutralize yet — session cleanup will handle it if they don't reconnect
+        } else {
+          // No piece on board, neutralize immediately
+          if (ws.id) teamsToNeutralize.push(ws.id);
+          leaderboard.delete(ws.id);
+          playerMetadata.delete(ws.id);
+        }
+      } else {
+        // Dead or unverified player — clean up immediately
+        if (ws.id) teamsToNeutralize.push(ws.id);
+        spawnImmunity.delete(ws.id);
         leaderboard.delete(ws.id);
-        broadcastToAll(sendLeaderboard());
+        playerMetadata.delete(ws.id);
       }
 
-      playerMetadata.delete(ws.id);
+      leaderboardDirty = true;
 
-      if (ws.ip) delete connectedIps[ws.ip];
+      if (ws.ip) {
+        connectedIps[ws.ip] = (connectedIps[ws.ip] || 1) - 1;
+        if (connectedIps[ws.ip] <= 0) delete connectedIps[ws.ip];
+      }
     },
 
     upgrade: (res, req, context) => {
       let ip = getIp(res, req);
 
       if (ip !== undefined) {
-        if (connectedIps[ip] === true) {
+        // Allow up to 3 connections per IP (R5) — supports multiple tabs / NAT
+        const count = connectedIps[ip] || 0;
+        if (count >= 3) {
           res.end("Connection rejected");
           console.log("ws ratelimit", ip);
           return;
         }
-        connectedIps[ip] = true;
+        connectedIps[ip] = count + 1;
       }
 
       res.upgrade(
@@ -1503,11 +1654,19 @@ app.get("/:filename/:filename2", (res, req) => {
     return;
   }
 
-  let path = req.getParameter(0) + "/" + req.getParameter(1);
-  if (fsSync.existsSync(path) && fsSync.statSync(path).isFile()) {
-    const pathEnd = path.slice(path.length - 3);
-    if (pathEnd === "css") res.writeHeader("Content-Type", "text/css");
-    else res.writeHeader("Content-Type", "text/javascript");
+  let filePath = req.getParameter(0) + "/" + req.getParameter(1);
+
+  // Prevent path traversal (R2)
+  const resolved = pathModule.resolve(filePath);
+  if (!resolved.startsWith(process.cwd())) {
+    res.cork(() => { res.writeStatus("403 Forbidden"); res.end(); });
+    return;
+  }
+
+  if (fsSync.existsSync(filePath) && fsSync.statSync(filePath).isFile()) {
+    const ext = pathModule.extname(filePath).toLowerCase();
+    const MIME_TYPES = { '.css': 'text/css', '.js': 'text/javascript', '.html': 'text/html', '.json': 'application/json', '.png': 'image/png', '.mp3': 'audio/mpeg' };
+    res.writeHeader("Content-Type", MIME_TYPES[ext] || "application/octet-stream");
 
     // Disable caching in development for hot reloading
     if (!isProd) {
@@ -1516,7 +1675,7 @@ app.get("/:filename/:filename2", (res, req) => {
       res.writeHeader("Expires", "0");
     }
 
-    res.end(fsSync.readFileSync(path));
+    res.end(fsSync.readFileSync(filePath));
   } else {
     res.cork(() => {
       res.writeStatus("404 Not Found");
@@ -1536,12 +1695,20 @@ app.get("/client/assets/:filename", (res, req) => {
     return;
   }
 
-  let path = "client/assets/" + req.getParameter(0);
-  if (fsSync.existsSync(path) && fsSync.statSync(path).isFile()) {
-    const pathEnd = path.slice(path.length - 3);
-    if (pathEnd === "png") res.writeHeader("Content-Type", "image/png");
+  let assetPath = "client/assets/" + req.getParameter(0);
+
+  // Prevent path traversal (R2)
+  const resolvedAsset = pathModule.resolve(assetPath);
+  if (!resolvedAsset.startsWith(process.cwd())) {
+    res.cork(() => { res.writeStatus("403 Forbidden"); res.end(); });
+    return;
+  }
+
+  if (fsSync.existsSync(assetPath) && fsSync.statSync(assetPath).isFile()) {
+    const ext = pathModule.extname(assetPath).toLowerCase();
+    if (ext === ".png") res.writeHeader("Content-Type", "image/png");
     else res.writeHeader("Content-Type", "audio/mpeg");
-    res.end(fsSync.readFileSync(path));
+    res.end(fsSync.readFileSync(assetPath));
   } else {
     res.cork(() => {
       res.writeStatus("404 Not Found");
@@ -1550,27 +1717,21 @@ app.get("/client/assets/:filename", (res, req) => {
   }
 });
 
-// Bad word filter
-const alphabet = "abcdefghijklmnopqrstuvwxyz";
-const alphabetMap = {};
-for (let i = 0; i < alphabet.length; i++) {
-  alphabetMap[alphabet[i]] = true;
+// Profanity filter — uses bad-words npm package (no inline word lists)
+function isBadWord(str) {
+  try {
+    return profanityFilter.isProfane(str);
+  } catch (e) {
+    return false;
+  }
 }
 
-function isBadWord(str) {
-  let filtered = "";
-  for (let i = 0; i < str.length; i++) {
-    const char = str[i].toLowerCase();
-    if (alphabetMap[char]) filtered += char;
+function cleanBadWords(str) {
+  try {
+    return profanityFilter.clean(str);
+  } catch (e) {
+    return str;
   }
-
-  for (const word of badWords) {
-    if (filtered.includes(word)) {
-      console.log("bad word", word, filtered);
-      return true;
-    }
-  }
-  return false;
 }
 
 const encoder = new TextEncoder();

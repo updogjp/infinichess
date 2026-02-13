@@ -182,7 +182,8 @@ function appendChatMessage(msg, color = "white", name = "", kills = 0) {
   } else {
     chatMessage.innerText = msg;
     if (color === "rainbow") {
-      setInterval(() => {
+      const rainbowInterval = setInterval(() => {
+        if (!chatMessage.parentNode) { clearInterval(rainbowInterval); return; }
         chatMessage.style.color = `hsl(${performance.now() / 12}, 50%, 50%)`;
       }, 1000 / 60);
     } else {
@@ -316,9 +317,6 @@ function updateLeaderboard(entries) {
     prevLBState.set(id, state);
   }
 }
-
-// Legacy compat — kept for any other callers
-function addToLeaderboard() {}
 
 // All-time top 3 leaderboard (gold/silver/bronze)
 const MEDAL_ICONS = ["🥇", "🥈", "🥉"];

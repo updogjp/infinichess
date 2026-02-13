@@ -43,10 +43,6 @@ body {
   cursor: grabbing !important;
 }
 
-#minimapCanvas {
-  position: absolute;
-  display: none; /* Hidden for now */
-}
 
 .hidden {
   display: none !important;

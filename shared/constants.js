@@ -406,21 +406,10 @@ globalThis.moveToNotation = (pieceType, fromX, fromY, toX, toY, isCapture) => {
     return `${symbol}${from}${cap}${to}`;
 };
 
-// Bad word filter
-const BAD_WORDS = [
-  'ass', 'bitch', 'damn', 'fuck', 'shit', 'crap', 'piss', 'cock', 'dick',
-  'pussy', 'whore', 'slut', 'bastard', 'asshole', 'douchebag', 'motherfucker',
-  'nigger', 'nigga', 'faggot', 'retard', 'kys', 'kms', 'kill yourself'
-];
-
+// Profanity filtering is handled server-side via the bad-words npm package.
+// Client-side filterBadWords is a passthrough — server sanitizes names and chat.
 globalThis.filterBadWords = (text) => {
-  if (!text) return text;
-  let filtered = text.toLowerCase();
-  for (const word of BAD_WORDS) {
-    const regex = new RegExp(`\\b${word}\\b`, 'gi');
-    filtered = filtered.replace(regex, '*'.repeat(word.length));
-  }
-  return filtered;
+  return text || '';
 };
 
 // Export for Node.js

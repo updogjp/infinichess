@@ -1355,14 +1355,16 @@ function render() {
     }
   }
 
-  changed = false;
   // Update floating chat bubbles
   if (window.updateChatBubbles) {
     window.updateChatBubbles();
   }
 
-  // Update statistics panel
-  if (selfId !== -1) {
+  // Update statistics panel — throttled to 200ms to avoid per-frame DOM writes (E4)
+  const statsNow = performance.now();
+  if (selfId !== -1 && (!window._lastStatsUpdate || statsNow - window._lastStatsUpdate > 200)) {
+    window._lastStatsUpdate = statsNow;
+
     document.getElementById("stat-name").textContent =
       window.playerName || "UNKNOWN";
     document.getElementById("stat-color").textContent =
