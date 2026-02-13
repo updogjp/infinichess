@@ -81,6 +81,16 @@ if (!initializeCanvas()) {
 // Spatial hash is now defined in networking.js
 // window.spatialHash is available
 
+// Prevent Chrome iOS pull-to-refresh and rubber-banding on non-canvas elements
+document.addEventListener('touchmove', (e) => {
+  // Allow scrolling inside chat and leaderboard containers
+  const tag = e.target.tagName;
+  const isScrollable = e.target.closest('.chat-div, .leaderboard-div, .stats-content, #playerSetupDiv');
+  if (!isScrollable) {
+    e.preventDefault();
+  }
+}, { passive: false });
+
 let mouse;
 let selectedSquareX, selectedSquareY;
 let legalMoves = undefined,
@@ -1654,17 +1664,26 @@ function updatePieceTooltip() {
 // MOBILE TOUCH HANDLERS
 const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || ('ontouchstart' in window);
 
+const TOUCH_TAP_THRESHOLD = 10; // px — movement below this is a tap, above is drag/pan
+const TOUCH_HOLD_MS = 0; // No hold delay — immediate drag
+
 let touchState = {
-  panning: false,
   pinching: false,
+  draggingPiece: false, // True when dragging own piece to a new square
+  panning: false,       // True when panning camera with single finger
   startX: 0,
   startY: 0,
+  lastX: 0,
+  lastY: 0,
   camStartX: 0,
   camStartY: 0,
   lastDist: 0,
   lastMidX: 0,
   lastMidY: 0,
   moved: false,
+  startSquareX: -1,     // Grid square where touch started
+  startSquareY: -1,
+  touchedOwnPiece: false, // Whether the initial touch was on own piece
 };
 
 function getTouchDist(t1, t2) {
@@ -1685,24 +1704,47 @@ canvas.addEventListener("touchstart", (e) => {
   document.body.classList.add("touching");
 
   if (e.touches.length === 2) {
-    // Two-finger: pan + pinch-to-zoom
+    // Two-finger: pinch-to-zoom + pan
     touchState.pinching = true;
-    touchState.panning = true;
+    touchState.draggingPiece = false;
+    touchState.panning = false;
     touchState.lastDist = getTouchDist(e.touches[0], e.touches[1]);
     const mid = getTouchMid(e.touches[0], e.touches[1]);
     touchState.lastMidX = mid.x;
     touchState.lastMidY = mid.y;
     touchState.camStartX = camera.x;
     touchState.camStartY = camera.y;
+    // Cancel any piece drag in progress
+    draggingSelected = false;
   } else if (e.touches.length === 1) {
-    // Single finger: piece interaction (tap to select/move)
-    touchState.panning = false;
+    const tx = e.touches[0].clientX;
+    const ty = e.touches[0].clientY;
     touchState.pinching = false;
-    touchState.startX = e.touches[0].clientX;
-    touchState.startY = e.touches[0].clientY;
+    touchState.draggingPiece = false;
+    touchState.panning = false;
+    touchState.startX = tx;
+    touchState.startY = ty;
+    touchState.lastX = tx;
+    touchState.lastY = ty;
     touchState.camStartX = camera.x;
     touchState.camStartY = camera.y;
     touchState.moved = false;
+
+    // Determine what we touched
+    const pos = canvasPos({ x: tx, y: ty });
+    const sqX = Math.floor(pos.x / squareSize);
+    const sqY = Math.floor(pos.y / squareSize);
+    touchState.startSquareX = sqX;
+    touchState.startSquareY = sqY;
+
+    // Check if touching own piece
+    touchState.touchedOwnPiece = false;
+    if (window.spatialHash && selfId !== -1) {
+      const piece = window.spatialHash.get(sqX, sqY);
+      if (piece.type !== 0 && piece.team === selfId) {
+        touchState.touchedOwnPiece = true;
+      }
+    }
   }
 }, { passive: false });
 
@@ -1739,26 +1781,112 @@ canvas.addEventListener("touchmove", (e) => {
     touchState.lastMidX = mid.x;
     touchState.lastMidY = mid.y;
     changed = true;
-  } else if (!touchState.pinching && e.touches.length === 1) {
-    // Single finger drag — only mark as moved (no camera pan)
-    const dx = e.touches[0].clientX - touchState.startX;
-    const dy = e.touches[0].clientY - touchState.startY;
-    if (Math.abs(dx) > 8 || Math.abs(dy) > 8) touchState.moved = true;
+    return;
   }
+
+  if (e.touches.length !== 1 || touchState.pinching) return;
+
+  const tx = e.touches[0].clientX;
+  const ty = e.touches[0].clientY;
+  const dx = tx - touchState.startX;
+  const dy = ty - touchState.startY;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+
+  // Once past threshold, decide: drag piece or pan camera
+  if (!touchState.moved && dist > TOUCH_TAP_THRESHOLD) {
+    touchState.moved = true;
+
+    if (touchState.touchedOwnPiece) {
+      // Start dragging own piece
+      touchState.draggingPiece = true;
+      touchState.panning = false;
+
+      // Select the piece and generate legal moves
+      const sqX = touchState.startSquareX;
+      const sqY = touchState.startSquareY;
+      selectedSquareX = sqX;
+      selectedSquareY = sqY;
+      const myKills = (window.playerNamesMap && window.playerNamesMap[selfId])
+        ? window.playerNamesMap[selfId].kills : 0;
+      legalMoves = generateLegalMoves(sqX, sqY, window.spatialHash, selfId, myKills);
+      draggingSelected = true;
+    } else {
+      // Pan camera
+      touchState.draggingPiece = false;
+      touchState.panning = true;
+    }
+  }
+
+  if (touchState.draggingPiece) {
+    // Update mousePos so the drag rendering works (reuses desktop drag renderer)
+    mousePos = canvasPos({ x: tx, y: ty });
+    changed = true;
+  } else if (touchState.panning) {
+    // Pan camera
+    const moveDx = tx - touchState.lastX;
+    const moveDy = ty - touchState.lastY;
+    camera.x += moveDx / camera.scale;
+    camera.y += moveDy / camera.scale;
+    changed = true;
+  }
+
+  touchState.lastX = tx;
+  touchState.lastY = ty;
 }, { passive: false });
 
 canvas.addEventListener("touchend", (e) => {
   e.preventDefault();
 
   if (e.touches.length === 0) {
-    // Single tap (no drag): piece selection or move
-    if (!touchState.moved && !touchState.pinching) {
+    if (touchState.draggingPiece && draggingSelected) {
+      // Drop piece — check if landing on a legal move
+      const dropPos = canvasPos({ x: touchState.lastX, y: touchState.lastY });
+      const dropX = Math.floor(dropPos.x / squareSize);
+      const dropY = Math.floor(dropPos.y / squareSize);
+
+      let legal = false;
+      if (legalMoves) {
+        for (let i = 0; i < legalMoves.length; i++) {
+          if (legalMoves[i][0] === dropX && legalMoves[i][1] === dropY) {
+            legal = true;
+            break;
+          }
+        }
+      }
+
+      if (legal && performance.now() >= cooldownEndTime) {
+        const buf = new Int32Array(5);
+        buf[0] = 55550;
+        buf[1] = selectedSquareX;
+        buf[2] = selectedSquareY;
+        buf[3] = dropX;
+        buf[4] = dropY;
+        send(buf);
+
+        // Optimistic update
+        const movingPiece = window.spatialHash.get(selectedSquareX, selectedSquareY);
+        window.spatialHash.set(selectedSquareX, selectedSquareY, 0, 0);
+        window.spatialHash.set(dropX, dropY, movingPiece.type, selfId);
+
+        legalMoves = [];
+        unconfirmedSX = selectedSquareX;
+        unconfirmedSY = selectedSquareY;
+        selectedSquareX = dropX;
+        selectedSquareY = dropY;
+        moveWasDrag = true;
+        cooldownEndTime = performance.now() + (window.moveCooldown || 1500);
+      }
+
+      draggingSelected = false;
+      changed = true;
+    } else if (!touchState.moved && !touchState.pinching) {
+      // Single tap (no drag): piece selection or tap-to-move
       const touch = e.changedTouches[0];
       const pos = canvasPos({ x: touch.clientX, y: touch.clientY });
       const squareX = Math.floor(pos.x / squareSize);
       const squareY = Math.floor(pos.y / squareSize);
 
-      // Check if tapping a legal move
+      // Check if tapping a legal move square
       if (legalMoves !== undefined && selectedSquareX !== undefined) {
         for (let i = 0; i < legalMoves.length; i++) {
           if (legalMoves[i][0] === squareX && legalMoves[i][1] === squareY && performance.now() >= cooldownEndTime) {
@@ -1770,7 +1898,7 @@ canvas.addEventListener("touchend", (e) => {
             buf[4] = squareY;
             send(buf);
 
-            // Optimistic update: move piece immediately in spatial hash
+            // Optimistic update
             const movingPiece = window.spatialHash.get(selectedSquareX, selectedSquareY);
             window.spatialHash.set(selectedSquareX, selectedSquareY, 0, 0);
             window.spatialHash.set(squareX, squareY, movingPiece.type, selfId);
@@ -1780,20 +1908,28 @@ canvas.addEventListener("touchend", (e) => {
             selectedSquareY = squareY;
             cooldownEndTime = performance.now() + (window.moveCooldown || 1500);
             changed = true;
+            // Don't fall through to deselect
+            touchState.panning = false;
+            touchState.pinching = false;
+            touchState.draggingPiece = false;
+            document.body.classList.remove("touching");
+            return;
           }
         }
       }
 
-      // Select own piece
+      // Select own piece or deselect
       selectedSquareX = selectedSquareY = undefined;
       legalMoves = undefined;
-      if (window.spatialHash) {
+      if (window.spatialHash && selfId !== -1) {
         const piece = window.spatialHash.get(squareX, squareY);
         if (piece.type !== 0 && piece.team === selfId) {
           selectedSquareX = squareX;
           selectedSquareY = squareY;
           const myKills = (window.playerNamesMap && window.playerNamesMap[selfId]) ? window.playerNamesMap[selfId].kills : 0;
-          legalMoves = generateLegalMoves(selectedSquareX, selectedSquareY, window.spatialHash, selfId, myKills);
+          legalMoves = generateLegalMoves(squareX, squareY, window.spatialHash, selfId, myKills);
+        } else if (piece.type !== 0 && piece.team !== 0 && piece.team !== selfId) {
+          invalidClickEffect = { x: squareX, y: squareY, time: performance.now() };
         }
       }
       changed = true;
@@ -1801,16 +1937,21 @@ canvas.addEventListener("touchend", (e) => {
 
     touchState.panning = false;
     touchState.pinching = false;
+    touchState.draggingPiece = false;
     document.body.classList.remove("touching");
   } else if (e.touches.length === 1 && touchState.pinching) {
-    // Went from 2 fingers to 1 — stop panning, allow tap
+    // Went from 2 fingers to 1 — reset to single-finger state
     touchState.pinching = false;
     touchState.panning = false;
+    touchState.draggingPiece = false;
     touchState.startX = e.touches[0].clientX;
     touchState.startY = e.touches[0].clientY;
+    touchState.lastX = e.touches[0].clientX;
+    touchState.lastY = e.touches[0].clientY;
     touchState.camStartX = camera.x;
     touchState.camStartY = camera.y;
     touchState.moved = true; // Prevent accidental tap
+    draggingSelected = false;
   }
 }, { passive: false });
 
