@@ -1457,35 +1457,39 @@ body {
   text-transform: uppercase;
 }
 
-/* Chat button — bottom left corner */
+/* Chat button — bottom left corner (matches panel-tab style) */
 .chat-btn {
   position: fixed;
   left: 10px;
   bottom: 10px;
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  background: rgba(15, 15, 15, 0.9);
-  border: 1px solid var(--border-color);
-  color: var(--text-primary);
-  font-size: 24px;
+  padding: 6px 12px;
+  background: rgba(15, 15, 15, 0.85);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1px;
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   z-index: 100;
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
   backdrop-filter: blur(4px);
+  font-family: "Sometype Mono", monospace;
+  text-transform: uppercase;
 }
 
 .chat-btn:hover {
   background: rgba(30, 30, 30, 0.95);
+  color: var(--text-primary);
   border-color: var(--text-secondary);
-  transform: scale(1.1);
+  transform: translateY(-1px);
 }
 
 .chat-btn:active {
-  transform: scale(0.95);
+  transform: translateY(1px);
+}
+
+.chat-btn.hidden {
+  display: none;
 }
 
 .panel-tab-left {
@@ -1518,9 +1522,8 @@ body {
   .chat-btn {
     left: 5px;
     bottom: 5px;
-    width: 44px;
-    height: 44px;
-    font-size: 20px;
+    padding: 5px 10px;
+    font-size: 10px;
   }
 }
 

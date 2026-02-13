@@ -1384,6 +1384,18 @@ function render() {
       const progress = 1 - remaining / respawnTime;
       const seconds = (remaining / 1000).toFixed(1);
 
+      // Auto-respawn when countdown expires
+      if (remaining <= 0 && gameOver) {
+        gameOver = false;
+        gameOverTime = undefined;
+        gameOverAlpha = 0;
+        window.gameOverKiller = null;
+        // Send respawn request to server
+        const buf = new Uint16Array(1);
+        buf[0] = 55551; // Request respawn
+        send(buf);
+      }
+
       // Countdown bar background
       const barW = 260;
       const barH = 8;

@@ -72,10 +72,12 @@ window.onkeydown = window.onkeyup = (e) => {
           chatInput.blur();
 
           chatInput.style.opacity = "0";
+          if (chatBtn) chatBtn.classList.remove("hidden");
         } else if (e.type === "keydown") {
           // focus chat
           chatOpen = true;
           chatDiv.classList.remove("hidden");
+          if (chatBtn) chatBtn.classList.add("hidden");
           chatInput.setAttribute("tabindex", "0");
           chatInput.focus();
 
@@ -275,11 +277,13 @@ function updateLeaderboard(entries) {
       killsSpan.classList.add("lb-kills");
       row.appendChild(killsSpan);
 
-      // Add click handler for spectate mode: click to follow player
+      // Add click handler: click to enter spectate mode and follow player
       row.addEventListener("click", () => {
-        if (window.spectateMode && id !== 0) {
-          // Set camera to follow this player
+        if (id !== 0) {
+          // Enter spectate mode and follow this player
+          window.spectateMode = true;
           window.spectateFollowId = id;
+          console.log(`👁️ Following player ${id} in spectate mode`);
         }
       });
     }
@@ -440,6 +444,7 @@ if (chatBtn) {
     e.stopPropagation();
     chatOpen = true;
     chatDiv.classList.remove("hidden");
+    chatBtn.classList.add("hidden");
     chatInput.setAttribute("tabindex", "0");
     chatInput.focus();
     chatInput.style.opacity = "1";
@@ -465,6 +470,7 @@ if (isMobile) {
       chatOpen = false;
       chatInput.value = "";
       chatInput.style.opacity = "0";
+      if (chatBtn) chatBtn.classList.remove("hidden");
     }, 150);
   });
 
