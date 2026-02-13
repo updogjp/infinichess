@@ -47,11 +47,12 @@ jspm_packages/
 # Yarn Integrity file
 .yarn-integrity
 
-# dotenv environment variables file
+# dotenv environment variables file (keep .env.example in repo for documentation)
 .env
 .env.test
 .env.local
 .env.production
+!.env.example
 
 # parcel-bundler cache
 .cache

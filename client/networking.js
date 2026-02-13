@@ -294,6 +294,7 @@ ws.addEventListener("message", function (data) {
         piece_type: movingPiece.type,
         is_capture: isCapture,
       });
+      if (window.posthog.flush) window.posthog.flush();
     }
 
     // Clear selection if our piece moved (server confirmed)
@@ -478,6 +479,7 @@ ws.addEventListener("message", function (data) {
           total_kills: kills,
           kills_this_update: kills - oldKills,
         });
+        if (window.posthog.flush) window.posthog.flush();
       }
     }
 
@@ -519,7 +521,10 @@ ws.onopen = () => {
   connected = true;
   reconnectAttempts = 0;
   console.log("✓ WebSocket connected");
-  if (window.posthog && window.posthog.capture) window.posthog.capture('ws_connected');
+  if (window.posthog && window.posthog.capture) {
+    window.posthog.capture('ws_connected');
+    if (window.posthog.flush) window.posthog.flush();
+  }
   window.send = (data) => {
     ws.send(data);
   };
@@ -695,7 +700,10 @@ function initPlayerSetup() {
     // PostHog: identify player and track game start
     if (window.posthog) {
       if (window.posthog.identify) window.posthog.identify(window.playerName, { player_color: window.playerColor });
-      if (window.posthog.capture) window.posthog.capture('game_start', { player_name: window.playerName, player_color: window.playerColor, is_mobile: /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) });
+      if (window.posthog.capture) {
+        window.posthog.capture('game_start', { player_name: window.playerName, player_color: window.playerColor, is_mobile: /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) });
+        if (window.posthog.flush) window.posthog.flush();
+      }
     }
 
     window.spectateMode = false;
