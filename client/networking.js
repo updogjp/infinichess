@@ -75,39 +75,42 @@ window.aiCooldowns = new Map();
 // Active chat bubbles
 const activeChatBubbles = new Map(); // playerId -> { text, time, element }
 
-// Turnstile callback - called when captcha is completed
-window.onTurnstileSuccess = (token) => {
-  console.log("✓ Turnstile captcha completed, token:", token.substring(0, 20) + "...");
-  turnstileToken = token;
-  
+// Show the PLAY button and attach its click handler (called once)
+let playButtonAttached = false;
+function showPlayButton(token) {
+  if (playButtonAttached) return;
+  playButtonAttached = true;
+
   // Send token to server for verification
-  if (ws && ws.readyState === WebSocket.OPEN) {
+  if (token && ws && ws.readyState === WebSocket.OPEN) {
     const tokenBytes = new TextEncoder().encode(token);
     const buf = new Uint8Array(1 + tokenBytes.length);
     buf[0] = tokenBytes.length;
     buf.set(tokenBytes, 1);
     console.log("📤 Sending Turnstile token to server, buffer length:", buf.length);
     ws.send(buf);
-    
-    // Show the PLAY button on the captcha screen
-    setTimeout(() => {
-      console.log("✓ Captcha verified, showing PLAY button");
-      const turnstileWidget = document.getElementById("turnstileWidget");
-      if (turnstileWidget) turnstileWidget.classList.add("hidden");
-      const playBtn = document.getElementById("captchaPlayBtn");
-      if (playBtn) {
-        playBtn.classList.remove("hidden");
-        playBtn.addEventListener("click", () => {
-          document.getElementById("fullscreenDiv").classList.add("hidden");
-          document.getElementById("playerSetupDiv").classList.remove("hidden");
-          if (window.startRenderLoop) window.startRenderLoop();
-          initPlayerSetup();
-        });
-      }
-    }, 500);
-  } else {
-    console.error("❌ WebSocket not open, cannot send token. State:", ws?.readyState);
   }
+
+  console.log("✓ Showing PLAY button");
+  const turnstileWidget = document.getElementById("turnstileWidget");
+  if (turnstileWidget) turnstileWidget.classList.add("hidden");
+  const playBtn = document.getElementById("captchaPlayBtn");
+  if (playBtn) {
+    playBtn.classList.remove("hidden");
+    playBtn.addEventListener("click", () => {
+      document.getElementById("fullscreenDiv").classList.add("hidden");
+      document.getElementById("playerSetupDiv").classList.remove("hidden");
+      if (window.startRenderLoop) window.startRenderLoop();
+      initPlayerSetup();
+    });
+  }
+}
+
+// Turnstile callback - called when captcha is completed
+window.onTurnstileSuccess = (token) => {
+  console.log("✓ Turnstile captcha completed, token:", token.substring(0, 20) + "...");
+  turnstileToken = token;
+  showPlayButton(token);
 };
 
 // Debug: Log when Turnstile script loads
@@ -842,23 +845,21 @@ window.updateChatBubbles = function () {
     if (ws.readyState === WebSocket.OPEN) {
       console.log("✓ WebSocket connected, validating Turnstile...");
       
-      // Check if Turnstile widget is properly configured
       const turnstileWidget = document.getElementById("turnstileWidget");
       const sitekey = turnstileWidget?.getAttribute("data-sitekey");
       
       if (!sitekey || sitekey === "__TURNSTILE_SITE_KEY__") {
-        // In development, auto-verify without captcha (no error shown)
         if (window.isDev) {
-          console.log("🔧 DEV MODE: Auto-verifying without captcha");
-          setTimeout(() => {
-            window.onTurnstileSuccess("dev-token");
-          }, 500);
+          // DEV MODE: skip captcha entirely, just show PLAY button
+          console.log("🔧 DEV MODE: Skipping captcha, showing PLAY button");
+          if (turnstileWidget) turnstileWidget.classList.add("hidden");
+          const errorDiv = document.getElementById("turnstileError");
+          if (errorDiv) errorDiv.classList.add("hidden");
+          showPlayButton("dev-token");
         } else {
           console.error("❌ Turnstile sitekey not configured!");
           const errorDiv = document.getElementById("turnstileError");
-          if (errorDiv) {
-            errorDiv.classList.remove("hidden");
-          }
+          if (errorDiv) errorDiv.classList.remove("hidden");
         }
       } else {
         console.log("✓ Turnstile sitekey configured:", sitekey.substring(0, 10) + "...");

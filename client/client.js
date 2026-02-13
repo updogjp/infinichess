@@ -1728,6 +1728,12 @@ document.addEventListener("DOMContentLoaded", () => {
       statsPanel.classList.remove("hidden");
       statsExpand.classList.add("hidden");
     });
+
+    // Auto-collapse on mobile
+    if (window.innerWidth <= 768) {
+      statsPanel.classList.add("hidden");
+      statsExpand.classList.remove("hidden");
+    }
   }
 
   // Leaderboard panel: collapse hides entire leaderboard-div, shows tiny tab
@@ -1746,6 +1752,12 @@ document.addEventListener("DOMContentLoaded", () => {
       lbDiv.classList.remove("hidden");
       lbExpand.classList.add("hidden");
     });
+
+    // Auto-collapse on mobile
+    if (window.innerWidth <= 768) {
+      lbDiv.classList.add("hidden");
+      lbExpand.classList.remove("hidden");
+    }
   }
 
   // Follow toggle button

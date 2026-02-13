@@ -36,6 +36,11 @@ const chatInput = document.querySelector(".chat");
 const lbDiv = document.querySelector(".leaderboard-div");
 const visChatDiv = document.querySelector(".chat-div");
 
+// Auto-hide chat on mobile
+if (window.innerWidth <= 768 && visChatDiv) {
+  visChatDiv.classList.add("hideChat");
+}
+
 chatMsgContainer.addEventListener(
   "wheel",
   (e) => {
