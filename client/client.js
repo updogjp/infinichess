@@ -25,28 +25,26 @@ window.startRenderLoop = () => {
 
 setTimeout(() => {
   const splash = document.getElementById("splashScreen");
-  const playButtonScreen = document.getElementById("playButtonScreen");
+  const splashLoader = document.getElementById("splashLoader");
   const playerSetup = document.getElementById("playerSetupDiv");
   const playButton = document.getElementById("playButton");
   
-  if (splash) {
-    splash.classList.add("splash-fade-out");
-    setTimeout(() => {
-      splash.style.display = "none";
-      // Show play button screen — player must click to proceed
-      if (playButtonScreen) playButtonScreen.classList.remove("hidden");
-      
-      // Play button click handler
-      if (playButton) {
-        playButton.onclick = () => {
-          if (playButtonScreen) playButtonScreen.classList.add("hidden");
-          // Show deploy screen
+  // Hide loader bar, show play button in its place
+  if (splashLoader) splashLoader.style.display = "none";
+  if (playButton) {
+    playButton.classList.remove("hidden");
+    playButton.onclick = () => {
+      // Fade out splash, then show deploy screen
+      if (splash) {
+        splash.classList.add("splash-fade-out");
+        setTimeout(() => {
+          splash.style.display = "none";
           if (playerSetup) playerSetup.classList.remove("hidden");
           try { window.startRenderLoop(); } catch (e) { console.error("startRenderLoop error:", e); }
           try { if (typeof initPlayerSetup === "function") initPlayerSetup(); } catch (e) { console.error("initPlayerSetup error:", e); }
-        };
+        }, 600);
       }
-    }, 600);
+    };
   }
 }, 3000);
 
