@@ -4,6 +4,19 @@ const HOST = window.isDev
   ? location.origin.replace(/^http/, "ws")
   : "wss://api.infinichess.io";
 
+// Splash screen → captcha transition after 5 seconds
+setTimeout(() => {
+  const splash = document.getElementById("splashScreen");
+  const captcha = document.getElementById("fullscreenDiv");
+  if (splash) {
+    splash.classList.add("splash-fade-out");
+    setTimeout(() => {
+      splash.style.display = "none";
+      if (captcha) captcha.classList.remove("hidden");
+    }, 600);
+  }
+}, 5000);
+
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 

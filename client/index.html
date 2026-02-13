@@ -19,8 +19,33 @@
   </head>
 
   <body>
+    <!-- Splash Screen -->
+    <div id="splashScreen">
+      <div class="splash-container">
+        <div class="splash-logo-wrap">
+          <img src="/client/assets/infinichess_512.png" alt="Infinichess" class="splash-logo" />
+        </div>
+        <h1 class="splash-title">INFINICHESS</h1>
+        <p class="splash-subtitle">MASSIVELY MULTIPLAYER CHESS</p>
+        <div class="splash-links">
+          <a href="https://github.com/updogjp/infinichess" target="_blank" rel="noopener" class="splash-link">
+            <span class="splash-link-icon">&#9679;</span> GITHUB
+          </a>
+          <a href="https://discord.com/invite/tvbEDUZvvB" target="_blank" rel="noopener" class="splash-link">
+            <span class="splash-link-icon">&#9679;</span> DISCORD
+          </a>
+          <a href="https://x.com/updogjp" target="_blank" rel="noopener" class="splash-link">
+            <span class="splash-link-icon">&#9679;</span> TWITTER
+          </a>
+        </div>
+        <div class="splash-loader">
+          <div class="splash-loader-bar"></div>
+        </div>
+      </div>
+    </div>
+
     <!-- Captcha Screen -->
-    <div id="fullscreenDiv">
+    <div id="fullscreenDiv" class="hidden">
       <div class="auth-container">
         <div class="auth-header">
           <h1>INFINICHESS</h1>
@@ -36,6 +61,7 @@
         <div id="turnstileError" class="hidden" style="color: #ff6b6b; margin-top: 10px; font-size: 12px;">
           Captcha not configured. Contact admin.
         </div>
+        <button id="captchaPlayBtn" class="captcha-play-btn hidden">[ PLAY ]</button>
       </div>
     </div>
 

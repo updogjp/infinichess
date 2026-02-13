@@ -87,12 +87,20 @@ window.onTurnstileSuccess = (token) => {
     console.log("📤 Sending Turnstile token to server, buffer length:", buf.length);
     ws.send(buf);
     
-    // Show player setup modal after captcha is verified
+    // Show the PLAY button on the captcha screen
     setTimeout(() => {
-      console.log("✓ Showing player setup modal after captcha verification");
-      document.getElementById("fullscreenDiv").classList.add("hidden");
-      document.getElementById("playerSetupDiv").classList.remove("hidden");
-      initPlayerSetup();
+      console.log("✓ Captcha verified, showing PLAY button");
+      const turnstileWidget = document.getElementById("turnstileWidget");
+      if (turnstileWidget) turnstileWidget.classList.add("hidden");
+      const playBtn = document.getElementById("captchaPlayBtn");
+      if (playBtn) {
+        playBtn.classList.remove("hidden");
+        playBtn.addEventListener("click", () => {
+          document.getElementById("fullscreenDiv").classList.add("hidden");
+          document.getElementById("playerSetupDiv").classList.remove("hidden");
+          initPlayerSetup();
+        });
+      }
     }, 500);
   } else {
     console.error("❌ WebSocket not open, cannot send token. State:", ws?.readyState);
@@ -840,17 +848,18 @@ window.updateChatBubbles = function () {
       const sitekey = turnstileWidget?.getAttribute("data-sitekey");
       
       if (!sitekey || sitekey === "__TURNSTILE_SITE_KEY__") {
-        console.error("❌ Turnstile sitekey not configured!");
-        const errorDiv = document.getElementById("turnstileError");
-        if (errorDiv) {
-          errorDiv.classList.remove("hidden");
-        }
-        // In development, auto-verify without captcha
+        // In development, auto-verify without captcha (no error shown)
         if (window.isDev) {
           console.log("🔧 DEV MODE: Auto-verifying without captcha");
           setTimeout(() => {
             window.onTurnstileSuccess("dev-token");
           }, 500);
+        } else {
+          console.error("❌ Turnstile sitekey not configured!");
+          const errorDiv = document.getElementById("turnstileError");
+          if (errorDiv) {
+            errorDiv.classList.remove("hidden");
+          }
         }
       } else {
         console.log("✓ Turnstile sitekey configured:", sitekey.substring(0, 10) + "...");
