@@ -224,6 +224,16 @@ ws.addEventListener("message", function (data) {
     const endPiece = spatialHash.get(finX, finY);
     const isCapture = endPiece.type !== 0;
 
+    // Update spatial hash: move piece from start to finish
+    // For self moves this may already be done optimistically, but re-applying is safe
+    if (movingPiece.type !== 0) {
+      spatialHash.set(startX, startY, 0, 0);
+      spatialHash.set(finX, finY, movingPiece.type, playerId);
+    } else {
+      // Piece already moved (optimistic update) — just ensure destination is correct
+      spatialHash.set(finX, finY, spatialHash.get(finX, finY).type || endPiece.type, playerId);
+    }
+
     // Play sounds for all visible captures/moves (not just self)
     if (audioLoaded === true) {
       try {
@@ -265,7 +275,7 @@ ws.addEventListener("message", function (data) {
     }
 
     // Clear selection if our piece moved
-    if (movingPiece.team === selfId) {
+    if (playerId === selfId) {
       if (selectedSquareX === startX && selectedSquareY === startY) {
         unconfirmedSX =
           unconfirmedSY =
