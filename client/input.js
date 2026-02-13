@@ -267,6 +267,10 @@ function updateLeaderboard(entries) {
       nameSpan.classList.add("player-name");
       row.appendChild(nameSpan);
 
+      const eloSpan = document.createElement("span");
+      eloSpan.classList.add("lb-elo");
+      row.appendChild(eloSpan);
+
       const killsSpan = document.createElement("span");
       killsSpan.classList.add("lb-kills");
       row.appendChild(killsSpan);
@@ -277,6 +281,20 @@ function updateLeaderboard(entries) {
     row.querySelector(".player-color-indicator").style.backgroundColor = colorStr;
     row.querySelector(".player-name").textContent = name;
     row.querySelector(".lb-kills").textContent = kills;
+
+    // ELO rating badge (visible after 5 kills)
+    const eloEl = row.querySelector(".lb-elo");
+    const elo = calculateELO(kills);
+    const eloRank = getELORank(elo);
+    if (elo !== null && eloRank) {
+      eloEl.textContent = elo;
+      eloEl.style.color = eloRank.color;
+      eloEl.title = eloRank.name;
+      eloEl.classList.remove("hidden");
+    } else {
+      eloEl.textContent = '';
+      eloEl.classList.add("hidden");
+    }
 
     // Tint row background based on kills (subtle color gradient)
     const intensity = Math.min(kills * 2, 40);

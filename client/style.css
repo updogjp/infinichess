@@ -954,6 +954,19 @@ body {
   white-space: nowrap;
 }
 
+.lb-elo {
+  font-size: 9px;
+  font-weight: 600;
+  min-width: 28px;
+  text-align: right;
+  letter-spacing: -0.5px;
+  opacity: 0.85;
+}
+
+.lb-elo.hidden {
+  display: none;
+}
+
 .lb-kills {
   font-size: 10px;
   color: var(--text-secondary);
@@ -1394,6 +1407,43 @@ body {
   transform: translateY(1px);
 }
 
+/* Kill badge — shows kill count when stats panel is collapsed */
+.kill-badge {
+  position: fixed;
+  left: 10px;
+  top: 46px;
+  background: rgba(15, 15, 15, 0.9);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 4px 10px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  z-index: 100;
+  font-family: "Sometype Mono", monospace;
+  pointer-events: none;
+  backdrop-filter: blur(4px);
+}
+
+.kill-badge.hidden {
+  display: none;
+}
+
+#kill-badge-count {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.5px;
+}
+
+.kill-badge-label {
+  font-size: 8px;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
 .panel-tab-left {
   left: 10px;
   top: 10px;
@@ -1412,6 +1462,14 @@ body {
   .panel-tab-right {
     right: 5px;
     top: 5px;
+  }
+  .kill-badge {
+    left: 5px;
+    top: 40px;
+    padding: 3px 8px;
+  }
+  #kill-badge-count {
+    font-size: 12px;
   }
 }
 

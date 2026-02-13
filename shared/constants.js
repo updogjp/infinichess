@@ -406,6 +406,23 @@ globalThis.moveToNotation = (pieceType, fromX, fromY, toX, toY, isCapture) => {
     return `${symbol}${from}${cap}${to}`;
 };
 
+// Faux ELO rating system — visible after 5 kills
+// Starts at 800, gains diminish as rating climbs (logarithmic curve)
+globalThis.calculateELO = (kills) => {
+  if (kills < 5) return null; // Not yet rated
+  return Math.round(800 + 200 * Math.log2(1 + kills) + kills * 8);
+};
+
+globalThis.getELORank = (elo) => {
+  if (elo === null) return null;
+  if (elo >= 2000) return { name: 'Grandmaster', abbr: 'GM', color: '#FFD700' };
+  if (elo >= 1600) return { name: 'Master', abbr: 'M', color: '#E040FB' };
+  if (elo >= 1300) return { name: 'Expert', abbr: 'E', color: '#00BCD4' };
+  if (elo >= 1050) return { name: 'Advanced', abbr: 'A', color: '#4CAF50' };
+  if (elo >= 900) return { name: 'Intermediate', abbr: 'I', color: '#FF9800' };
+  return { name: 'Novice', abbr: 'N', color: '#9E9E9E' };
+};
+
 // Profanity filtering is handled server-side via the bad-words npm package.
 // Client-side filterBadWords is a passthrough — server sanitizes names and chat.
 globalThis.filterBadWords = (text) => {

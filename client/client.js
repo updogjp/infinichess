@@ -1460,6 +1460,12 @@ function render() {
       }
     }
 
+    // Update kill badge (visible when stats panel is collapsed)
+    const killBadgeCount = document.getElementById("kill-badge-count");
+    if (killBadgeCount) {
+      killBadgeCount.textContent = myKills;
+    }
+
     document.getElementById("stat-zoom").textContent =
       camera.scale.toFixed(2) + "x";
   }
@@ -1818,16 +1824,20 @@ function interpolate(s, e, t) {
   const statsCollapse = document.getElementById("stats-collapse");
   const statsExpand = document.getElementById("stats-expand");
 
+  const killBadge = document.getElementById("kill-badge");
+
   if (statsCollapse && statsExpand && statsPanel) {
     statsCollapse.addEventListener("click", (e) => {
       e.stopPropagation();
       statsPanel.classList.add("hidden");
       statsExpand.classList.remove("hidden");
+      if (killBadge && selfId !== -1) killBadge.classList.remove("hidden");
     });
     statsExpand.addEventListener("click", (e) => {
       e.stopPropagation();
       statsPanel.classList.remove("hidden");
       statsExpand.classList.add("hidden");
+      if (killBadge) killBadge.classList.add("hidden");
     });
   }
 
@@ -1849,8 +1859,7 @@ function interpolate(s, e, t) {
   }
 
   const followToggle = document.getElementById("followToggle");
-  const isMobileDevice = window.innerWidth <= 768;
-  window.followCamera = isMobileDevice; // Default ON for mobile
+  window.followCamera = true; // Default ON for all devices
   if (followToggle) {
     followToggle.textContent = window.followCamera ? "ON" : "OFF";
     followToggle.classList.toggle("on", window.followCamera);
