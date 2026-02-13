@@ -370,6 +370,43 @@ In `shared/constants.js`:
 | Viewport sync interval | 2 seconds        | `server/index.js`      |
 | Camera update interval | 500ms            | `client/networking.js` |
 
+### Analytics (PostHog)
+
+PostHog API key is **not** stored in the repository. Configure it via environment variables:
+
+**Local Development:**
+
+```bash
+cp .env.example .env
+# Edit .env and add your PostHog key:
+# VITE_POSTHOG_KEY=phc_your_key_here
+```
+
+**Cloudflare Pages Deployment:**
+
+1. Go to your Cloudflare Pages project settings
+2. Navigate to **Settings → Environment variables**
+3. Add a new variable:
+   - **Name:** `VITE_POSTHOG_KEY`
+   - **Value:** Your PostHog API key (from https://posthog.com/project/settings)
+   - **Environments:** Production (and Preview if desired)
+4. Redeploy the site
+
+The client reads the key from `import.meta.env.VITE_POSTHOG_KEY` at runtime. If not configured, PostHog will log a warning but the app will continue to work.
+
+**Events Tracked:**
+
+- `page_load_test` — on page load (for connectivity verification)
+- `game_start` — when player starts a game
+- `piece_moved` — when player moves a piece
+- `player_kill_milestone` — when player reaches a new kill count
+- `ws_connected` — when WebSocket connects
+- `ws_disconnected` — when WebSocket disconnects
+- `ws_error` — on WebSocket errors
+- `client_error` — JavaScript errors
+- `client_unhandled_rejection` — unhandled promise rejections
+- `render_error` — canvas rendering errors
+
 ---
 
 ## Project History
