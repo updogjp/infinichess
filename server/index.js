@@ -66,12 +66,12 @@ const GAME_CONFIG = {
 const AI_CONFIG = {
   enabled: true, // Set to false to disable AI players
   verboseLog: false, // Set to true to log every AI move to console
-  minCount: 20, // Minimum AI pieces always on the board regardless of player count
-  piecesPerPlayer: 6, // Additional AI pieces to spawn per online player
+  minCount: 8, // Minimum AI pieces always on the board regardless of player count
+  piecesPerPlayer: 2, // Additional AI pieces to spawn per online player
   spawnRadius: 1000, // Spawn AI within this distance of online players
   removalRadius: 8000, // Remove AI pieces if they wander beyond this distance (much larger to prevent pop-in/out)
   moveInterval: 800, // AI makes moves every 800ms (matches interpolation timing better)
-  moveChance: 0.4, // 40% chance an AI piece moves each interval
+  moveChance: 0.25, // 25% chance an AI piece moves each interval
 };
 
 // Chess-themed AI name generator

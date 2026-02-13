@@ -30,11 +30,10 @@ setTimeout(() => {
     splash.classList.add("splash-fade-out");
     setTimeout(() => {
       splash.style.display = "none";
-      if (playerSetup) {
-        playerSetup.classList.remove("hidden");
-        window.startRenderLoop();
-        if (typeof initPlayerSetup === "function") initPlayerSetup();
-      }
+      // Show deploy screen first, then start render loop
+      if (playerSetup) playerSetup.classList.remove("hidden");
+      try { window.startRenderLoop(); } catch (e) { console.error("startRenderLoop error:", e); }
+      try { if (typeof initPlayerSetup === "function") initPlayerSetup(); } catch (e) { console.error("initPlayerSetup error:", e); }
     }, 600);
   }
 }, 3000);
@@ -1744,12 +1743,6 @@ function interpolate(s, e, t) {
       statsPanel.classList.remove("hidden");
       statsExpand.classList.add("hidden");
     });
-
-    // Auto-collapse on mobile
-    if (window.innerWidth <= 768) {
-      statsPanel.classList.add("hidden");
-      statsExpand.classList.remove("hidden");
-    }
   }
 
   const lbDiv = document.querySelector(".leaderboard-div");
@@ -1767,12 +1760,6 @@ function interpolate(s, e, t) {
       lbDiv.classList.remove("hidden");
       lbExpand.classList.add("hidden");
     });
-
-    // Auto-collapse on mobile
-    if (window.innerWidth <= 768) {
-      lbDiv.classList.add("hidden");
-      lbExpand.classList.remove("hidden");
-    }
   }
 
   const followToggle = document.getElementById("followToggle");

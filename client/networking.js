@@ -588,6 +588,15 @@ function initPlayerSetup() {
     playerSetupCompleted = true;
     document.getElementById("playerSetupDiv").classList.add("hidden");
 
+    // Show in-game UI
+    const statsPanel = document.getElementById("stats-panel");
+    const statsExpand = document.getElementById("stats-expand");
+    if (window.innerWidth <= 768) {
+      if (statsExpand) statsExpand.classList.remove("hidden");
+    } else {
+      if (statsPanel) statsPanel.classList.remove("hidden");
+    }
+
     // Send player info to server
     sendPlayerInfo();
   });
@@ -601,9 +610,16 @@ function initPlayerSetup() {
       playerSetupCompleted = true;
       document.getElementById("playerSetupDiv").classList.add("hidden");
 
-      // Show chat/leaderboard UI
+      // Show in-game UI
       const chatContainer = document.querySelector(".chatContainer");
       if (chatContainer) chatContainer.classList.remove("hidden");
+      const statsPanel = document.getElementById("stats-panel");
+      const statsExpand = document.getElementById("stats-expand");
+      if (window.innerWidth <= 768) {
+        if (statsExpand) statsExpand.classList.remove("hidden");
+      } else {
+        if (statsPanel) statsPanel.classList.remove("hidden");
+      }
 
       // Center camera at origin and request viewport
       camera.x = 0;
