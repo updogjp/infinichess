@@ -1408,16 +1408,11 @@ body {
 
 /* Mobile optimizations */
 @media (max-width: 768px) {
+  /* Leaderboard */
   .leaderboard-div {
-    width: 200px;
+    width: 180px;
     font-size: 10px;
     padding: 10px;
-  }
-
-  .chat-div,
-  .chat {
-    width: 250px;
-    font-size: 10px;
   }
 
   .online-count {
@@ -1428,6 +1423,12 @@ body {
     font-size: 9px;
   }
 
+  .lb-row {
+    font-size: 10px;
+    padding: 6px 6px;
+    gap: 5px;
+  }
+
   .player-color-indicator {
     width: 10px;
     height: 10px;
@@ -1435,11 +1436,161 @@ body {
   }
 
   .hideLB {
-    right: -200px !important;
+    right: -180px !important;
+  }
+
+  /* Chat */
+  .chat-div,
+  .chat {
+    width: 220px;
+    font-size: 10px;
+  }
+
+  .chat-div {
+    max-height: 100px;
   }
 
   .hideChat {
-    left: -250px !important;
+    left: -220px !important;
+  }
+
+  /* Auth / Captcha screen */
+  .auth-header h1 {
+    font-size: 28px;
+    letter-spacing: 5px;
+  }
+
+  .subtitle {
+    font-size: 10px;
+    letter-spacing: 3px;
+  }
+
+  .captcha-play-btn {
+    padding: 14px 40px;
+    font-size: 14px;
+  }
+
+  /* Setup panel */
+  .setup-panel {
+    min-width: 0;
+    max-width: 90vw;
+    width: 90vw;
+    padding: 20px;
+  }
+
+  .setup-header h2 {
+    font-size: 20px;
+  }
+
+  .form-group label {
+    font-size: 10px;
+  }
+
+  #playerName {
+    font-size: 14px;
+    padding: 12px;
+  }
+
+  .color-grid {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+  }
+
+  .color-swatch {
+    min-height: 36px;
+  }
+
+  .deploy-btn {
+    padding: 16px;
+    font-size: 13px;
+  }
+
+  .spectate-btn {
+    padding: 12px;
+    font-size: 11px;
+  }
+
+  #previewCanvas {
+    width: 100px;
+    height: 100px;
+  }
+
+  /* Kill feed */
+  .kill-feed {
+    top: 5px;
+  }
+
+  .kill-entry {
+    font-size: 9px;
+    padding: 3px 8px;
+  }
+
+  /* Chat bubbles */
+  .chat-bubble {
+    font-size: 9px;
+    padding: 4px 8px;
+  }
+
+  /* Piece tooltip — hide on mobile (no hover) */
+  .piece-tooltip {
+    display: none !important;
+  }
+
+  /* Toast */
+  .toast {
+    font-size: 10px;
+    padding: 8px 14px;
+    max-width: 85vw;
+  }
+
+  /* Evolution path */
+  .evolution-path {
+    font-size: 10px;
+  }
+
+  .evo-step {
+    padding: 2px 5px;
+    font-size: 10px;
+  }
+}
+
+/* Small phones */
+@media (max-width: 420px) {
+  .leaderboard-div {
+    width: 150px;
+    padding: 8px;
+  }
+
+  .hideLB {
+    right: -150px !important;
+  }
+
+  .chat-div,
+  .chat {
+    width: 180px;
+    font-size: 9px;
+  }
+
+  .hideChat {
+    left: -180px !important;
+  }
+
+  .setup-panel {
+    padding: 16px;
+  }
+
+  .auth-header h1 {
+    font-size: 22px;
+    letter-spacing: 4px;
+  }
+
+  .stats-panel {
+    min-width: 130px;
+    padding: 6px;
+  }
+
+  .stat-row {
+    font-size: 9px;
   }
 }
 

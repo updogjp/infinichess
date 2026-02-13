@@ -240,8 +240,9 @@ window.onmouseup = (e) => {
 const colors = ["#4F4096", "#3A2E6F"]; // Purple theme
 const squareSize = 150;
 
-// Camera starts at origin
-let camera = { x: 0, y: 0, scale: 1 };
+// Camera starts at origin — mobile gets a wider default view
+const defaultScale = (window.innerWidth < 768) ? 0.55 : 1;
+let camera = { x: 0, y: 0, scale: defaultScale };
 window.camera = camera; // Export for networking.js to modify
 
 // 0 - empty
@@ -1540,7 +1541,170 @@ function updatePieceTooltip() {
   pieceTooltip.classList.remove("hidden");
 }
 
-// MOBILE - Removed (desktop only)
+// MOBILE TOUCH HANDLERS
+const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || ('ontouchstart' in window);
+
+let touchState = {
+  panning: false,
+  pinching: false,
+  startX: 0,
+  startY: 0,
+  camStartX: 0,
+  camStartY: 0,
+  lastDist: 0,
+  lastMidX: 0,
+  lastMidY: 0,
+  moved: false,
+};
+
+function getTouchDist(t1, t2) {
+  const dx = t1.clientX - t2.clientX;
+  const dy = t1.clientY - t2.clientY;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+function getTouchMid(t1, t2) {
+  return {
+    x: (t1.clientX + t2.clientX) / 2,
+    y: (t1.clientY + t2.clientY) / 2,
+  };
+}
+
+canvas.addEventListener("touchstart", (e) => {
+  e.preventDefault();
+  document.body.classList.add("touching");
+
+  if (e.touches.length === 2) {
+    // Pinch-to-zoom start
+    touchState.pinching = true;
+    touchState.panning = false;
+    touchState.lastDist = getTouchDist(e.touches[0], e.touches[1]);
+    const mid = getTouchMid(e.touches[0], e.touches[1]);
+    touchState.lastMidX = mid.x;
+    touchState.lastMidY = mid.y;
+    touchState.camStartX = camera.x;
+    touchState.camStartY = camera.y;
+  } else if (e.touches.length === 1) {
+    // Single touch pan start
+    touchState.panning = true;
+    touchState.pinching = false;
+    touchState.startX = e.touches[0].clientX;
+    touchState.startY = e.touches[0].clientY;
+    touchState.camStartX = camera.x;
+    touchState.camStartY = camera.y;
+    touchState.moved = false;
+  }
+}, { passive: false });
+
+canvas.addEventListener("touchmove", (e) => {
+  e.preventDefault();
+
+  if (touchState.pinching && e.touches.length === 2) {
+    // Pinch-to-zoom
+    const newDist = getTouchDist(e.touches[0], e.touches[1]);
+    const mid = getTouchMid(e.touches[0], e.touches[1]);
+    const scaleFactor = newDist / touchState.lastDist;
+
+    const oldScale = camera.scale;
+    camera.scale *= scaleFactor;
+    if (camera.scale > 6) camera.scale = 6;
+    if (camera.scale < 0.27) camera.scale = 0.27;
+
+    // Zoom toward pinch midpoint
+    const rect = canvas.getBoundingClientRect();
+    const mx = ((mid.x - rect.x) / rect.width) * canvas.width;
+    const my = ((mid.y - rect.y) / rect.height) * canvas.height;
+    const cx = mx - canvas.width / 2;
+    const cy = my - canvas.height / 2;
+    camera.x = cx / camera.scale - (cx / oldScale - camera.x);
+    camera.y = cy / camera.scale - (cy / oldScale - camera.y);
+
+    // Also pan with the midpoint movement
+    const midDx = mid.x - touchState.lastMidX;
+    const midDy = mid.y - touchState.lastMidY;
+    camera.x += midDx / camera.scale;
+    camera.y += midDy / camera.scale;
+
+    touchState.lastDist = newDist;
+    touchState.lastMidX = mid.x;
+    touchState.lastMidY = mid.y;
+    changed = true;
+  } else if (touchState.panning && e.touches.length === 1) {
+    // Single touch pan
+    const dx = e.touches[0].clientX - touchState.startX;
+    const dy = e.touches[0].clientY - touchState.startY;
+    camera.x = touchState.camStartX + dx / camera.scale;
+    camera.y = touchState.camStartY + dy / camera.scale;
+
+    if (Math.abs(dx) > 8 || Math.abs(dy) > 8) touchState.moved = true;
+    changed = true;
+  }
+}, { passive: false });
+
+canvas.addEventListener("touchend", (e) => {
+  e.preventDefault();
+
+  if (e.touches.length === 0) {
+    // If single tap (no pan movement), treat as a click for piece selection
+    if (touchState.panning && !touchState.moved && !touchState.pinching) {
+      const touch = e.changedTouches[0];
+      const pos = canvasPos({ x: touch.clientX, y: touch.clientY });
+      const squareX = Math.floor(pos.x / squareSize);
+      const squareY = Math.floor(pos.y / squareSize);
+
+      // Check if tapping a legal move
+      if (legalMoves !== undefined && selectedSquareX !== undefined) {
+        for (let i = 0; i < legalMoves.length; i++) {
+          if (legalMoves[i][0] === squareX && legalMoves[i][1] === squareY && performance.now() >= cooldownEndTime) {
+            const buf = new Int32Array(5);
+            buf[0] = 55550;
+            buf[1] = selectedSquareX;
+            buf[2] = selectedSquareY;
+            buf[3] = squareX;
+            buf[4] = squareY;
+            send(buf);
+            legalMoves = [];
+            selectedSquareX = squareX;
+            selectedSquareY = squareY;
+            cooldownEndTime = performance.now() + (window.moveCooldown || 1500);
+            changed = true;
+            touchState.panning = false;
+            touchState.pinching = false;
+            document.body.classList.remove("touching");
+            return;
+          }
+        }
+      }
+
+      // Select own piece
+      selectedSquareX = selectedSquareY = undefined;
+      legalMoves = undefined;
+      if (window.spatialHash) {
+        const piece = window.spatialHash.get(squareX, squareY);
+        if (piece.type !== 0 && piece.team === selfId) {
+          selectedSquareX = squareX;
+          selectedSquareY = squareY;
+          const myKills = (window.playerNamesMap && window.playerNamesMap[selfId]) ? window.playerNamesMap[selfId].kills : 0;
+          legalMoves = generateLegalMoves(selectedSquareX, selectedSquareY, window.spatialHash, selfId, myKills);
+        }
+      }
+      changed = true;
+    }
+
+    touchState.panning = false;
+    touchState.pinching = false;
+    document.body.classList.remove("touching");
+  } else if (e.touches.length === 1) {
+    // Went from 2 fingers to 1 — restart pan from current position
+    touchState.pinching = false;
+    touchState.panning = true;
+    touchState.startX = e.touches[0].clientX;
+    touchState.startY = e.touches[0].clientY;
+    touchState.camStartX = camera.x;
+    touchState.camStartY = camera.y;
+    touchState.moved = true;
+  }
+}, { passive: false });
 
 function interpolate(s, e, t) {
   return (1 - t) * s + e * t;
