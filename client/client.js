@@ -1635,6 +1635,16 @@ function updatePieceTooltip() {
     let html = `<div class="tooltip-title">${pieceName} @ ${notation}</div>`;
     if (piece.team !== 0) {
       html += `<div class="tooltip-row"><span class="tooltip-label">OWNER:</span><span><span class="tooltip-color" style="background:${colorHex}"></span>${ownerName}</span></div>`;
+      
+      // Add ELO rating if player has 5+ kills
+      const entry = window.playerNamesMap && window.playerNamesMap[piece.team];
+      if (entry && entry.kills !== undefined) {
+        const elo = calculateELO(entry.kills);
+        const eloRank = getELORank(elo);
+        if (elo !== null && eloRank) {
+          html += `<div class="tooltip-row"><span class="tooltip-label">ELO:</span><span style="color:${eloRank.color}">${elo} (${eloRank.abbr})</span></div>`;
+        }
+      }
     } else {
       html += `<div class="tooltip-row"><span class="tooltip-label">STATUS:</span><span>Neutral</span></div>`;
     }

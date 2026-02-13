@@ -343,7 +343,9 @@ const ALLTIME_LB_KEY = "infinichess_alltime_leaderboard";
 
 function saveAllTimeLeaderboard(entries) {
   try {
-    const data = entries.slice(0, 3).map(e => ({
+    // Filter out AI (team 0) and take top 3 players only
+    const playerEntries = entries.filter(e => e.id !== 0);
+    const data = playerEntries.slice(0, 3).map(e => ({
       name: e.name,
       kills: e.kills,
       color: e.color
