@@ -1,0 +1,7 @@
+# Cloudflare Pages SPA routing
+# Match all routes and serve index.html, but exclude actual files
+/index.html 200
+/client/* 200
+/shared/* 200
+/assets/* 200
+/* /index.html 200
