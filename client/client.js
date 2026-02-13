@@ -91,16 +91,69 @@ window.showToast = (message, type = "info", duration = 4000) => {
   }, duration);
 };
 
-// Suppress default browser error UI, use toasts instead
-window.onerror = (msg, src, line) => {
+// Global error boundary — logs full details to console AND sends to PostHog
+window.onerror = (msg, src, line, col, error) => {
   if (msg === "ResizeObserver loop completed with undelivered notifications.") return true;
+
+  const errorInfo = {
+    message: String(msg),
+    source: src,
+    line: line,
+    column: col,
+    stack: error && error.stack ? error.stack : "no stack",
+    url: location.href,
+    userAgent: navigator.userAgent,
+    selfId: typeof selfId !== "undefined" ? selfId : "unknown",
+    timestamp: new Date().toISOString(),
+  };
+
+  console.error("🔴 [ERROR BOUNDARY]", errorInfo.message);
+  console.error("   Source:", errorInfo.source, "Line:", errorInfo.line, "Col:", errorInfo.column);
+  if (error && error.stack) console.error("   Stack:", error.stack);
+
+  // Send to PostHog
+  if (window.posthog && window.posthog.capture) {
+    window.posthog.capture('client_error', {
+      message: errorInfo.message,
+      source: errorInfo.source,
+      line: errorInfo.line,
+      column: errorInfo.column,
+      stack: errorInfo.stack,
+      url: errorInfo.url,
+    });
+  }
+
   const short = String(msg).slice(0, 80);
   window.showToast(`${short}`, "error", 5000);
   return true;
 };
+
 window.onunhandledrejection = (e) => {
   e.preventDefault();
-  const msg = e.reason ? String(e.reason.message || e.reason).slice(0, 80) : "Promise rejected";
+  const reason = e.reason;
+  const msg = reason ? String(reason.message || reason).slice(0, 80) : "Promise rejected";
+  const stack = reason && reason.stack ? reason.stack : "no stack";
+
+  const errorInfo = {
+    message: msg,
+    stack: stack,
+    url: location.href,
+    userAgent: navigator.userAgent,
+    selfId: typeof selfId !== "undefined" ? selfId : "unknown",
+    timestamp: new Date().toISOString(),
+  };
+
+  console.error("🔴 [UNHANDLED REJECTION]", msg);
+  if (reason && reason.stack) console.error("   Stack:", reason.stack);
+
+  if (window.posthog && window.posthog.capture) {
+    window.posthog.capture('client_unhandled_rejection', {
+      message: errorInfo.message,
+      stack: errorInfo.stack,
+      url: errorInfo.url,
+    });
+  }
+
   window.showToast(msg, "error", 5000);
 };
 
@@ -532,7 +585,8 @@ function render() {
     ctx.scale(camera.scale, camera.scale);
     ctx.translate(camera.x, camera.y);
   } catch (e) {
-    console.error("Canvas rendering error:", e);
+    console.error("🔴 [RENDER] Canvas transform error:", e.message, e.stack);
+    if (window.posthog && window.posthog.capture) window.posthog.capture('render_error', { phase: 'canvas_transform', error: e.message });
     ctx.restore();
     return;
   }
@@ -779,7 +833,8 @@ function render() {
           ctx.restore();
         }
       } catch (e) {
-        console.error("Piece rendering error:", e);
+        console.error("🔴 [RENDER] Piece rendering error:", e.message, "piece:", JSON.stringify({ x: piece.x, y: piece.y, type: piece.type, team: piece.team }), e.stack);
+        if (window.posthog && window.posthog.capture) window.posthog.capture('render_error', { phase: 'piece', error: e.message, piece_type: piece.type, piece_x: piece.x, piece_y: piece.y });
       }
     }
   }
@@ -855,7 +910,8 @@ function render() {
         window.spawnImmunities.delete(id);
       }
     } catch (e) {
-      console.error("Spawn immunity rendering error:", e);
+      console.error("🔴 [RENDER] Spawn immunity error:", e.message, e.stack);
+      if (window.posthog && window.posthog.capture) window.posthog.capture('render_error', { phase: 'spawn_immunity', error: e.message });
     }
   }
 
@@ -1118,7 +1174,7 @@ function render() {
     }
   }
 
-  ctx.setTransform(t);
+  ctx.restore();
 
   // XP bar — evolution progress HUD
   if (selfId !== -1 && !gameOver) {
@@ -1263,7 +1319,8 @@ function render() {
 
       ctx.globalAlpha = 1;
     } catch (e) {
-      console.error("Game over rendering error:", e);
+      console.error("🔴 [RENDER] Game over screen error:", e.message, e.stack);
+      if (window.posthog && window.posthog.capture) window.posthog.capture('render_error', { phase: 'game_over', error: e.message });
     }
   }
 

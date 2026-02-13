@@ -236,73 +236,23 @@ ws.addEventListener("message", function (data) {
       window.triggerCaptureEffect(finX, finY, attackerColor, endPiece.type);
     }
 
-    // Kill feed notification for captures
-    if (isCapture && endPiece.team !== 0) {
-      const attackerInfo = window.playerNamesMap && window.playerNamesMap[playerId];
-      const victimInfo = window.playerNamesMap && window.playerNamesMap[endPiece.team];
-      const attackerName = attackerInfo ? attackerInfo.name : (playerId >= 10000 ? "AI" : `#${playerId}`);
-      const victimName = victimInfo ? victimInfo.name : (endPiece.team >= 10000 ? "AI" : `#${endPiece.team}`);
-      const pieceName = PIECE_NAMES[endPiece.type] || "piece";
-      const isSelf = playerId === selfId || endPiece.team === selfId;
-      showKillFeed(attackerName, victimName, pieceName, isSelf);
-    }
-
-    // Check if our piece was captured (game over when we lose our piece)
-    if (
-      endPiece.team === selfId &&
-      endPiece.type !== 0 &&
-      playerId !== selfId
-    ) {
-      interpSquare = [finX, finY];
-      gameOver = true;
-      gameOverTime = time;
-      window._hadMyPiece = false; // Reset so camera recenters on respawn
-
-      // Store killer info for game over UI
-      const killerInfo = window.playerNamesMap && window.playerNamesMap[playerId];
-      const killerName = killerInfo ? killerInfo.name : (playerId >= 10000 ? "AI" : `#${playerId}`);
-      window.gameOverKiller = killerName;
-
-      // Screen shake on death
-      if (window.triggerScreenShake) {
-        window.triggerScreenShake(15);
-      }
-
-      try {
-        audios.gameover[0].play();
-      } catch (e) {}
-
-      setTimeout(() => {
-        const buf = new Uint8Array(0);
-        send(buf);
-      }, respawnTime - 100);
-    }
-
-    // Small screen shake when player makes a capture
-    if (isCapture && playerId === selfId && window.triggerScreenShake) {
-      window.triggerScreenShake(5);
-    }
-
-    // Track last move for highlight
-    if (window.setLastMove) {
-      window.setLastMove(startX, startY, finX, finY);
-    }
-
-    // Update spatial hash
-    spatialHash.set(finX, finY, movingPiece.type, movingPiece.team);
-    spatialHash.set(startX, startY, 0, 0);
-
-    // Set up interpolation for smooth movement
-    if (playerId !== selfId || !moveWasDrag) {
-      const interpKey = `${finX},${finY}`;
-      interpolatingPieces[interpKey] = [startX, startY];
-    }
-
     // Track AI cooldowns for rendering cooldown bars
     if (playerId >= 10000) {
       window.aiCooldowns.set(playerId, {
         endTime: performance.now() + moveCooldown,
         total: moveCooldown,
+      });
+    }
+
+    // PostHog: track move event (only for self moves to reduce noise)
+    if (playerId === selfId && window.posthog && window.posthog.capture) {
+      window.posthog.capture('piece_moved', {
+        from_x: startX,
+        from_y: startY,
+        to_x: finX,
+        to_y: finY,
+        piece_type: movingPiece.type,
+        is_capture: isCapture,
       });
     }
 
@@ -413,7 +363,16 @@ ws.addEventListener("message", function (data) {
     if (!window.playerNamesMap) window.playerNamesMap = {};
     for (let i = 0; i < arr.length; i++) {
       const { name, id, kills, color } = arr[i];
+      const oldKills = window.playerNamesMap[id] ? window.playerNamesMap[id].kills : 0;
       window.playerNamesMap[id] = { name, kills, color };
+      
+      // PostHog: track kill milestones for self
+      if (id === selfId && kills > oldKills && window.posthog && window.posthog.capture) {
+        window.posthog.capture('player_kill_milestone', {
+          total_kills: kills,
+          kills_this_update: kills - oldKills,
+        });
+      }
     }
 
     // Animated leaderboard update
@@ -454,6 +413,7 @@ ws.onopen = () => {
   connected = true;
   reconnectAttempts = 0;
   console.log("✓ WebSocket connected");
+  if (window.posthog && window.posthog.capture) window.posthog.capture('ws_connected');
   window.send = (data) => {
     ws.send(data);
   };
@@ -466,11 +426,13 @@ ws.onopen = () => {
 
 ws.onerror = (error) => {
   console.error("❌ WebSocket error:", error);
+  if (window.posthog && window.posthog.capture) window.posthog.capture('ws_error', { error: String(error) });
 };
 
 ws.onclose = () => {
   connected = false;
   console.log("Disconnected from server");
+  if (window.posthog && window.posthog.capture) window.posthog.capture('ws_disconnected', { reconnect_attempts: reconnectAttempts });
   window.send = (data) => { msgs.push(data); };
 
   if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
@@ -609,6 +571,12 @@ function initPlayerSetup() {
       playerColor: window.playerColor,
       connected: connected,
     });
+
+    // PostHog: identify player and track game start
+    if (window.posthog) {
+      if (window.posthog.identify) window.posthog.identify(window.playerName, { player_color: window.playerColor });
+      if (window.posthog.capture) window.posthog.capture('game_start', { player_name: window.playerName, player_color: window.playerColor, is_mobile: /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) });
+    }
 
     window.spectateMode = false;
     playerSetupCompleted = true;

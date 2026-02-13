@@ -229,6 +229,22 @@
     <!-- Toast Notifications -->
     <div id="toastContainer" class="toast-container"></div>
 
+    <script type="module">
+      import posthog from '/node_modules/posthog-js/dist/array.js';
+      window.posthog = posthog;
+      
+      posthog.init('phc_REDACTED', {
+        api_host: 'https://us.i.posthog.com',
+        person_profiles: 'always',
+        autocapture: false,
+        capture_pageview: true,
+        capture_pageleave: true,
+        session_recording: {
+          maskAllInputs: true,
+          maskAllText: true,
+        },
+      });
+    </script>
     <script src="/shared/constants.js"></script>
     <script src="/client/input.js"></script>
     <script src="/client/client.js"></script>
