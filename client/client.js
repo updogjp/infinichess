@@ -25,15 +25,27 @@ window.startRenderLoop = () => {
 
 setTimeout(() => {
   const splash = document.getElementById("splashScreen");
+  const playButtonScreen = document.getElementById("playButtonScreen");
   const playerSetup = document.getElementById("playerSetupDiv");
+  const playButton = document.getElementById("playButton");
+  
   if (splash) {
     splash.classList.add("splash-fade-out");
     setTimeout(() => {
       splash.style.display = "none";
-      // Show deploy screen first, then start render loop
-      if (playerSetup) playerSetup.classList.remove("hidden");
-      try { window.startRenderLoop(); } catch (e) { console.error("startRenderLoop error:", e); }
-      try { if (typeof initPlayerSetup === "function") initPlayerSetup(); } catch (e) { console.error("initPlayerSetup error:", e); }
+      // Show play button screen — player must click to proceed
+      if (playButtonScreen) playButtonScreen.classList.remove("hidden");
+      
+      // Play button click handler
+      if (playButton) {
+        playButton.onclick = () => {
+          if (playButtonScreen) playButtonScreen.classList.add("hidden");
+          // Show deploy screen
+          if (playerSetup) playerSetup.classList.remove("hidden");
+          try { window.startRenderLoop(); } catch (e) { console.error("startRenderLoop error:", e); }
+          try { if (typeof initPlayerSetup === "function") initPlayerSetup(); } catch (e) { console.error("initPlayerSetup error:", e); }
+        };
+      }
     }, 600);
   }
 }, 3000);
@@ -43,10 +55,19 @@ let ctx = null;
 
 function initializeCanvas() {
   if (!ctx) {
-    ctx = canvas.getContext("2d", { alpha: false, willReadFrequently: false });
+    // Ensure canvas has dimensions before getting context (Chrome iOS fix)
+    if (canvas.width === 0 || canvas.height === 0) {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    // Try without options first for maximum compatibility (Chrome iOS WKWebView)
+    try {
+      ctx = canvas.getContext("2d", { alpha: false });
+    } catch (e) {
+      ctx = canvas.getContext("2d");
+    }
     if (!ctx) {
       console.error("❌ Failed to get 2D canvas context");
-      window.showToast("Canvas initialization failed", "error", 5000);
       return false;
     }
     console.log("✅ Canvas context initialized");
@@ -54,9 +75,9 @@ function initializeCanvas() {
   return true;
 }
 
-// Initialize canvas on first use
+// Try to initialize canvas early, but don't throw — render loop will retry
 if (!initializeCanvas()) {
-  throw new Error("Cannot initialize canvas context");
+  console.warn("⚠️ Canvas context not available yet, will retry in render loop");
 }
 
 // Spatial hash is now defined in networking.js
@@ -245,6 +266,11 @@ window.onmousedown = (e) => {
         buf[4] = squareY;
         send(buf);
 
+        // Optimistic update: move piece immediately in spatial hash
+        const movingPiece = window.spatialHash.get(selectedSquareX, selectedSquareY);
+        window.spatialHash.set(selectedSquareX, selectedSquareY, 0, 0); // Clear old position
+        window.spatialHash.set(squareX, squareY, movingPiece.type, selfId); // Place at new position
+
         legalMoves = [];
 
         selectedSquareX = squareX;
@@ -255,6 +281,7 @@ window.onmousedown = (e) => {
 
         moveWasDrag = false;
         cooldownEndTime = performance.now() + (window.moveCooldown || 1500);
+        changed = true;
         return;
       }
     }
@@ -321,12 +348,18 @@ window.onmouseup = (e) => {
       buf[4] = newY;
       send(buf);
 
+      // Optimistic update: move piece immediately in spatial hash
+      const movingPiece = window.spatialHash.get(selectedSquareX, selectedSquareY);
+      window.spatialHash.set(selectedSquareX, selectedSquareY, 0, 0); // Clear old position
+      window.spatialHash.set(newX, newY, movingPiece.type, selfId); // Place at new position
+
       legalMoves = [];
       unconfirmedSX = selectedSquareX;
       unconfirmedSY = selectedSquareY;
 
       moveWasDrag = true;
       cooldownEndTime = performance.now() + (window.moveCooldown || 1500);
+      changed = true;
       return;
     }
   }
@@ -1612,9 +1645,9 @@ canvas.addEventListener("touchstart", (e) => {
   document.body.classList.add("touching");
 
   if (e.touches.length === 2) {
-    // Pinch-to-zoom start
+    // Two-finger: pan + pinch-to-zoom
     touchState.pinching = true;
-    touchState.panning = false;
+    touchState.panning = true;
     touchState.lastDist = getTouchDist(e.touches[0], e.touches[1]);
     const mid = getTouchMid(e.touches[0], e.touches[1]);
     touchState.lastMidX = mid.x;
@@ -1622,8 +1655,8 @@ canvas.addEventListener("touchstart", (e) => {
     touchState.camStartX = camera.x;
     touchState.camStartY = camera.y;
   } else if (e.touches.length === 1) {
-    // Single touch pan start
-    touchState.panning = true;
+    // Single finger: piece interaction (tap to select/move)
+    touchState.panning = false;
     touchState.pinching = false;
     touchState.startX = e.touches[0].clientX;
     touchState.startY = e.touches[0].clientY;
@@ -1637,7 +1670,7 @@ canvas.addEventListener("touchmove", (e) => {
   e.preventDefault();
 
   if (touchState.pinching && e.touches.length === 2) {
-    // Pinch-to-zoom
+    // Two-finger: pinch-to-zoom + pan
     const newDist = getTouchDist(e.touches[0], e.touches[1]);
     const mid = getTouchMid(e.touches[0], e.touches[1]);
     const scaleFactor = newDist / touchState.lastDist;
@@ -1666,15 +1699,11 @@ canvas.addEventListener("touchmove", (e) => {
     touchState.lastMidX = mid.x;
     touchState.lastMidY = mid.y;
     changed = true;
-  } else if (touchState.panning && e.touches.length === 1) {
-    // Single touch pan
+  } else if (!touchState.pinching && e.touches.length === 1) {
+    // Single finger drag — only mark as moved (no camera pan)
     const dx = e.touches[0].clientX - touchState.startX;
     const dy = e.touches[0].clientY - touchState.startY;
-    camera.x = touchState.camStartX + dx / camera.scale;
-    camera.y = touchState.camStartY + dy / camera.scale;
-
     if (Math.abs(dx) > 8 || Math.abs(dy) > 8) touchState.moved = true;
-    changed = true;
   }
 }, { passive: false });
 
@@ -1682,8 +1711,8 @@ canvas.addEventListener("touchend", (e) => {
   e.preventDefault();
 
   if (e.touches.length === 0) {
-    // If single tap (no pan movement), treat as a click for piece selection
-    if (touchState.panning && !touchState.moved && !touchState.pinching) {
+    // Single tap (no drag): piece selection or move
+    if (!touchState.moved && !touchState.pinching) {
       const touch = e.changedTouches[0];
       const pos = canvasPos({ x: touch.clientX, y: touch.clientY });
       const squareX = Math.floor(pos.x / squareSize);
@@ -1700,15 +1729,17 @@ canvas.addEventListener("touchend", (e) => {
             buf[3] = squareX;
             buf[4] = squareY;
             send(buf);
+
+            // Optimistic update: move piece immediately in spatial hash
+            const movingPiece = window.spatialHash.get(selectedSquareX, selectedSquareY);
+            window.spatialHash.set(selectedSquareX, selectedSquareY, 0, 0);
+            window.spatialHash.set(squareX, squareY, movingPiece.type, selfId);
+
             legalMoves = [];
             selectedSquareX = squareX;
             selectedSquareY = squareY;
             cooldownEndTime = performance.now() + (window.moveCooldown || 1500);
             changed = true;
-            touchState.panning = false;
-            touchState.pinching = false;
-            document.body.classList.remove("touching");
-            return;
           }
         }
       }
@@ -1731,15 +1762,15 @@ canvas.addEventListener("touchend", (e) => {
     touchState.panning = false;
     touchState.pinching = false;
     document.body.classList.remove("touching");
-  } else if (e.touches.length === 1) {
-    // Went from 2 fingers to 1 — restart pan from current position
+  } else if (e.touches.length === 1 && touchState.pinching) {
+    // Went from 2 fingers to 1 — stop panning, allow tap
     touchState.pinching = false;
-    touchState.panning = true;
+    touchState.panning = false;
     touchState.startX = e.touches[0].clientX;
     touchState.startY = e.touches[0].clientY;
     touchState.camStartX = camera.x;
     touchState.camStartY = camera.y;
-    touchState.moved = true;
+    touchState.moved = true; // Prevent accidental tap
   }
 }, { passive: false });
 
@@ -1784,8 +1815,12 @@ function interpolate(s, e, t) {
   }
 
   const followToggle = document.getElementById("followToggle");
-  window.followCamera = false;
+  const isMobileDevice = window.innerWidth <= 768;
+  window.followCamera = isMobileDevice; // Default ON for mobile
   if (followToggle) {
+    followToggle.textContent = window.followCamera ? "ON" : "OFF";
+    followToggle.classList.toggle("on", window.followCamera);
+    followToggle.classList.toggle("off", !window.followCamera);
     followToggle.addEventListener("click", (e) => {
       e.stopPropagation();
       window.followCamera = !window.followCamera;

@@ -67,7 +67,9 @@ body {
   align-items: center;
   justify-content: center;
   z-index: 1100;
-  transition: opacity 0.6s ease, visibility 0.6s ease;
+  transition:
+    opacity 0.6s ease,
+    visibility 0.6s ease;
 }
 
 #splashScreen.splash-fade-out {
@@ -139,7 +141,9 @@ body {
 
 .splash-link-icon {
   font-size: 6px;
-  transition: color 0.25s ease, transform 0.25s ease;
+  transition:
+    color 0.25s ease,
+    transform 0.25s ease;
 }
 
 .splash-link:hover {
@@ -198,7 +202,8 @@ body {
 }
 
 @keyframes splashLogoPulse {
-  0%, 100% {
+  0%,
+  100% {
     transform: scale(1);
     filter: drop-shadow(0 0 20px rgba(255, 255, 255, 0.1));
   }
@@ -209,8 +214,61 @@ body {
 }
 
 @keyframes splashLoaderFill {
-  from { width: 0%; }
-  to { width: 100%; }
+  from {
+    width: 0%;
+  }
+  to {
+    width: 100%;
+  }
+}
+
+/* ======================== */
+/* Play Button Screen       */
+/* ======================== */
+#playButtonScreen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: var(--bg-primary);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 1050;
+}
+
+.play-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+}
+
+.play-button {
+  font-family: "Sometype Mono", monospace;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--text-primary);
+  background: transparent;
+  border: 2px solid var(--text-primary);
+  padding: 16px 40px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+}
+
+.play-button:hover {
+  background: rgba(255, 255, 255, 0.1);
+  transform: scale(1.05);
+  box-shadow: 0 0 20px rgba(255, 255, 255, 0.2);
+}
+
+.play-button:active {
+  transform: scale(0.98);
 }
 
 @media (max-width: 768px) {
@@ -255,7 +313,7 @@ body {
 }
 
 .captcha-play-btn::after {
-  content: '';
+  content: "";
   position: absolute;
   top: 50%;
   left: 50%;
@@ -264,7 +322,9 @@ body {
   background: rgba(0, 0, 0, 0.12);
   border-radius: 50%;
   transform: translate(-50%, -50%);
-  transition: width 0.4s ease, height 0.4s ease;
+  transition:
+    width 0.4s ease,
+    height 0.4s ease;
 }
 
 .captcha-play-btn:hover {
@@ -528,7 +588,7 @@ body {
 }
 
 .deploy-btn::after {
-  content: '';
+  content: "";
   position: absolute;
   top: 50%;
   left: 50%;
@@ -537,7 +597,9 @@ body {
   background: rgba(0, 0, 0, 0.15);
   border-radius: 50%;
   transform: translate(-50%, -50%);
-  transition: width 0.4s ease, height 0.4s ease;
+  transition:
+    width 0.4s ease,
+    height 0.4s ease;
 }
 
 .deploy-btn:hover {
@@ -761,7 +823,7 @@ body {
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 3px;
-  color: #FFD700;
+  color: #ffd700;
   margin-bottom: 6px;
   text-transform: uppercase;
 }
@@ -778,9 +840,15 @@ body {
   margin-bottom: 1px;
 }
 
-.top3-row:nth-child(2) { background: rgba(255, 215, 0, 0.06); }
-.top3-row:nth-child(3) { background: rgba(192, 192, 192, 0.05); }
-.top3-row:nth-child(4) { background: rgba(205, 127, 50, 0.04); }
+.top3-row:nth-child(2) {
+  background: rgba(255, 215, 0, 0.06);
+}
+.top3-row:nth-child(3) {
+  background: rgba(192, 192, 192, 0.05);
+}
+.top3-row:nth-child(4) {
+  background: rgba(205, 127, 50, 0.04);
+}
 
 .top3-medal {
   font-size: 14px;
@@ -831,7 +899,10 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  transition: transform 0.4s ease, background 0.6s ease, border-left-color 0.3s ease;
+  transition:
+    transform 0.4s ease,
+    background 0.6s ease,
+    border-left-color 0.3s ease;
   position: relative;
 }
 
@@ -845,8 +916,12 @@ body {
 }
 
 @keyframes lbFlash {
-  0% { background: rgba(255, 255, 100, 0.25); }
-  100% { background: transparent; }
+  0% {
+    background: rgba(255, 255, 100, 0.25);
+  }
+  100% {
+    background: transparent;
+  }
 }
 
 .lb-row.lb-rank-up {
@@ -854,9 +929,15 @@ body {
 }
 
 @keyframes lbRankUp {
-  0% { transform: translateY(28px); }
-  50% { transform: translateY(-2px); }
-  100% { transform: translateY(0); }
+  0% {
+    transform: translateY(28px);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
+  100% {
+    transform: translateY(0);
+  }
 }
 
 .lb-row.lb-rank-down {
@@ -864,9 +945,15 @@ body {
 }
 
 @keyframes lbRankDown {
-  0% { transform: translateY(-28px); }
-  50% { transform: translateY(2px); }
-  100% { transform: translateY(0); }
+  0% {
+    transform: translateY(-28px);
+  }
+  50% {
+    transform: translateY(2px);
+  }
+  100% {
+    transform: translateY(0);
+  }
 }
 
 .lb-rank {
@@ -1470,49 +1557,95 @@ body {
     font-size: 14px;
   }
 
-  /* Setup panel */
+  /* Setup panel — compact for mobile, no overflow */
+  #playerSetupDiv {
+    padding: 10px;
+    overflow-y: auto;
+  }
+
   .setup-panel {
     min-width: 0;
     max-width: 90vw;
     width: 90vw;
-    padding: 20px;
+    padding: 16px;
+  }
+
+  .setup-header {
+    margin-bottom: 12px;
   }
 
   .setup-header h2 {
-    font-size: 20px;
+    font-size: 18px;
+    letter-spacing: 3px;
+  }
+
+  .form-group {
+    margin-bottom: 10px;
   }
 
   .form-group label {
-    font-size: 10px;
+    font-size: 9px;
+    margin-bottom: 4px;
   }
 
   #playerName {
-    font-size: 14px;
-    padding: 12px;
+    font-size: 13px;
+    padding: 8px;
   }
 
   .color-grid {
     grid-template-columns: repeat(4, 1fr);
-    gap: 6px;
+    gap: 4px;
   }
 
   .color-swatch {
-    min-height: 36px;
+    min-height: 28px;
   }
 
-  .deploy-btn {
-    padding: 16px;
-    font-size: 13px;
+  .preview-panel {
+    padding: 8px;
+    margin: 10px 0;
   }
 
-  .spectate-btn {
-    padding: 12px;
-    font-size: 11px;
+  .preview-label {
+    font-size: 8px;
+    margin-bottom: 4px;
   }
 
   #previewCanvas {
-    width: 100px;
-    height: 100px;
+    width: 60px;
+    height: 60px;
+  }
+
+  #previewName {
+    font-size: 10px;
+  }
+
+  .evolution-path {
+    font-size: 9px;
+    gap: 2px;
+    margin-top: 4px;
+  }
+
+  .evo-step {
+    padding: 2px 4px;
+    font-size: 8px;
+  }
+
+  .evo-hint {
+    font-size: 8px;
+    margin-top: 3px;
+  }
+
+  .deploy-btn {
+    padding: 12px;
+    font-size: 12px;
+  }
+
+  .spectate-btn {
+    padding: 8px;
+    font-size: 10px;
+    margin-top: 4px;
   }
 
   /* Kill feed */

@@ -144,6 +144,14 @@ ws.addEventListener("message", function (data) {
     if (isFirstSync) {
       const chatContainer = document.querySelector(".chatContainer");
       chatContainer.classList.remove("hidden");
+
+      // On mobile, hide leaderboard by default — show expand tab instead
+      if (window.innerWidth <= 768) {
+        const lbDiv = document.querySelector(".leaderboard-div");
+        const lbExpand = document.getElementById("lb-expand");
+        if (lbDiv) lbDiv.classList.add("hidden");
+        if (lbExpand) lbExpand.classList.remove("hidden");
+      }
     }
 
     changed = true;
