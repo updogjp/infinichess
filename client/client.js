@@ -4,7 +4,25 @@ const HOST = window.isDev
   ? location.origin.replace(/^http/, "ws")
   : "wss://api.infinichess.io";
 
-// Splash screen → player setup transition after 5 seconds (no captcha)
+// Splash screen → player setup transition after 3 seconds
+let renderLoopStarted = false;
+window.startRenderLoop = () => {
+  if (renderLoopStarted) return;
+  if (!imgsLoaded) {
+    // Images not ready yet, queue it
+    onImagesLoaded = () => {
+      if (renderLoopStarted) return;
+      renderLoopStarted = true;
+      console.log("🎮 Starting render loop (deferred until images loaded)");
+      requestAnimationFrame(render);
+    };
+    return;
+  }
+  renderLoopStarted = true;
+  console.log("🎮 Starting render loop");
+  requestAnimationFrame(render);
+};
+
 setTimeout(() => {
   const splash = document.getElementById("splashScreen");
   const playerSetup = document.getElementById("playerSetupDiv");
@@ -14,12 +32,12 @@ setTimeout(() => {
       splash.style.display = "none";
       if (playerSetup) {
         playerSetup.classList.remove("hidden");
-        if (window.startRenderLoop) window.startRenderLoop();
-        initPlayerSetup();
+        window.startRenderLoop();
+        if (typeof initPlayerSetup === "function") initPlayerSetup();
       }
     }, 600);
   }
-}, 5000);
+}, 3000);
 
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
@@ -275,11 +293,6 @@ for (let i = 0; i < srcs.length; i++) {
       console.log("✅ All images loaded, ready to render");
       window.imgs = imgs;
       if (onImagesLoaded) onImagesLoaded();
-      // Render loop will start after captcha is completed and PLAY button is clicked
-      window.startRenderLoop = () => {
-        console.log("🎮 Starting render loop");
-        requestAnimationFrame(render);
-      };
     }
   };
   img.onerror = () => {
@@ -1714,9 +1727,8 @@ function interpolate(s, e, t) {
   return (1 - t) * s + e * t;
 }
 
-// Panel collapse/expand functionality
-document.addEventListener("DOMContentLoaded", () => {
-  // Stats panel: collapse hides entire panel, shows tiny tab
+// Panel collapse/expand functionality (runs immediately — DOM is already ready since scripts are at bottom of body)
+{
   const statsPanel = document.getElementById("stats-panel");
   const statsCollapse = document.getElementById("stats-collapse");
   const statsExpand = document.getElementById("stats-expand");
@@ -1740,7 +1752,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // Leaderboard panel: collapse hides entire leaderboard-div, shows tiny tab
   const lbDiv = document.querySelector(".leaderboard-div");
   const lbCollapse = document.getElementById("lb-collapse");
   const lbExpand = document.getElementById("lb-expand");
@@ -1764,7 +1775,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // Follow toggle button
   const followToggle = document.getElementById("followToggle");
   window.followCamera = false;
   if (followToggle) {
@@ -1777,4 +1787,4 @@ document.addEventListener("DOMContentLoaded", () => {
       changed = true;
     });
   }
-});
+}
