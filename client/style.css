@@ -1457,6 +1457,37 @@ body {
   text-transform: uppercase;
 }
 
+/* Chat button — bottom left corner */
+.chat-btn {
+  position: fixed;
+  left: 10px;
+  bottom: 10px;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: rgba(15, 15, 15, 0.9);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  font-size: 24px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(4px);
+}
+
+.chat-btn:hover {
+  background: rgba(30, 30, 30, 0.95);
+  border-color: var(--text-secondary);
+  transform: scale(1.1);
+}
+
+.chat-btn:active {
+  transform: scale(0.95);
+}
+
 .panel-tab-left {
   left: 10px;
   top: 10px;
@@ -1483,6 +1514,13 @@ body {
   }
   #kill-badge-count {
     font-size: 12px;
+  }
+  .chat-btn {
+    left: 5px;
+    bottom: 5px;
+    width: 44px;
+    height: 44px;
+    font-size: 20px;
   }
 }
 

@@ -606,6 +606,19 @@ function render() {
     changed = true;
   }
 
+  // Spectate mode: follow selected player from leaderboard
+  if (window.spectateMode && window.spectateFollowId && window.spectateFollowId !== 0) {
+    const entry = window.playerNamesMap && window.playerNamesMap[window.spectateFollowId];
+    if (entry && entry.x !== undefined && entry.y !== undefined) {
+      const targetX = -(entry.x * squareSize + squareSize / 2);
+      const targetY = -(entry.y * squareSize + squareSize / 2);
+      const followLerp = 1 - Math.pow(0.01, dt / 1000);
+      camera.x = interpolate(camera.x, targetX, followLerp);
+      camera.y = interpolate(camera.y, targetY, followLerp);
+      changed = true;
+    }
+  }
+
   // Apply 64x64 boundary constraints if not in infinite mode
   if (!window.infiniteMode) {
     const viewWidth = canvas.w / camera.scale;

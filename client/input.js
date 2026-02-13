@@ -274,6 +274,14 @@ function updateLeaderboard(entries) {
       const killsSpan = document.createElement("span");
       killsSpan.classList.add("lb-kills");
       row.appendChild(killsSpan);
+
+      // Add click handler for spectate mode: click to follow player
+      row.addEventListener("click", () => {
+        if (window.spectateMode && id !== 0) {
+          // Set camera to follow this player
+          window.spectateFollowId = id;
+        }
+      });
     }
 
     // Update content
@@ -424,6 +432,19 @@ const isMobile =
   /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
     navigator.userAgent,
   );
+
+// Chat button: opens chat input
+const chatBtn = document.getElementById("chatBtn");
+if (chatBtn) {
+  chatBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    chatOpen = true;
+    chatDiv.classList.remove("hidden");
+    chatInput.setAttribute("tabindex", "0");
+    chatInput.focus();
+    chatInput.style.opacity = "1";
+  });
+}
 
 if (isMobile) {
   // Mobile: tap chat input to open it, tap Send or press Enter to send
