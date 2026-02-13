@@ -1509,12 +1509,10 @@ app.get("/", (res, req) => {
   }
   servedIps[ip]++;
 
-  // Disable caching in development for hot reloading
-  if (!isProd) {
-    res.writeHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-    res.writeHeader("Pragma", "no-cache");
-    res.writeHeader("Expires", "0");
-  }
+  // Disable caching for index.html (sitekey is injected dynamically)
+  res.writeHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  res.writeHeader("Pragma", "no-cache");
+  res.writeHeader("Expires", "0");
 
   let html = fsSync.readFileSync("client/index.html", "utf-8");
   const turnstileSiteKey = process.env.TURNSTILE_SITE_KEY || "";
