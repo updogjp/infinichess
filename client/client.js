@@ -62,13 +62,13 @@ if (!initializeCanvas()) {
 // Spatial hash is now defined in networking.js
 // window.spatialHash is available
 
-let mouse,
-  lastRenderedMinimap = -1e5;
+let mouse;
 let selectedSquareX, selectedSquareY;
 let legalMoves = undefined,
   draggingSelected = false,
   moveWasDrag = false;
 let cooldownEndTime = 0;
+let invalidClickEffect = null; // { x, y, time } for brief red flash on invalid clicks
 
 // Debug threat visualization
 let debugShowThreats = false;
@@ -228,6 +228,10 @@ window.onmousedown = (e) => {
       );
 
       draggingSelected = true;
+      changed = true;
+    } else if (piece.type !== 0 && piece.team !== 0 && piece.team !== selfId && selfId !== -1) {
+      // Clicked on enemy piece without a selection — brief red flash
+      invalidClickEffect = { x: squareX, y: squareY, time: performance.now() };
       changed = true;
     }
   }
@@ -389,8 +393,6 @@ window.triggerScreenShake = (intensity) => {
   changed = true;
 };
 
-let minimapCanvas = document.getElementById("minimapCanvas");
-let cx = minimapCanvas.getContext("2d");
 
 // Track first render for initial camera setup
 let firstRenderDone = false;
@@ -708,7 +710,7 @@ function render() {
           }
 
           const color = teamToColor(piece.team);
-          const hash = `${color.r}_${color.g}_${color.b}`;
+          const hash = (color.r << 16) | (color.g << 8) | color.b;
 
           // Manage cache size
           if (!tintedImgs.has(hash)) {
@@ -1097,6 +1099,25 @@ function render() {
     }
   }
 
+  // Render invalid click flash (brief red overlay on enemy piece)
+  if (invalidClickEffect) {
+    const elapsed = performance.now() - invalidClickEffect.time;
+    const INVALID_FLASH_DURATION = 300;
+    if (elapsed < INVALID_FLASH_DURATION) {
+      const alpha = (1 - elapsed / INVALID_FLASH_DURATION) * 0.35;
+      ctx.fillStyle = `rgba(255, 60, 60, ${alpha})`;
+      ctx.fillRect(
+        invalidClickEffect.x * squareSize,
+        invalidClickEffect.y * squareSize,
+        squareSize,
+        squareSize,
+      );
+      changed = true;
+    } else {
+      invalidClickEffect = null;
+    }
+  }
+
   ctx.setTransform(t);
 
   // XP bar — evolution progress HUD
@@ -1323,112 +1344,6 @@ function render() {
   updatePieceTooltip();
 }
 
-function renderMinimap() {
-  return;
-
-  const offset = Math.min(canvas.w, canvas.h) / 20;
-  const size = Math.min(canvas.w, canvas.h) / 5;
-
-  const x = canvas.w - offset - size;
-  const y = canvas.h - offset - size;
-
-  ctx.strokeStyle = "black";
-  ctx.fillStyle = "black";
-  ctx.lineWidth = 3;
-
-  ctx.lineJoin = ctx.lineCap = "round";
-  ctx.beginPath();
-  ctx.rect(x, y, size, size);
-
-  ctx.globalAlpha = 0.3;
-  ctx.fill();
-  ctx.closePath();
-  ctx.globalAlpha = 1;
-
-  // Update minimap periodically
-  if (time - lastRenderedMinimap > 300 && window.spatialHash) {
-    lastRenderedMinimap = time;
-
-    minimapCanvas.width = size;
-    minimapCanvas.height = size;
-
-    minimapCanvas.style.width = size + "px";
-    minimapCanvas.style.height = size + "px";
-
-    minimapCanvas.style.bottom = offset + "px";
-    minimapCanvas.style.right = offset + "px";
-
-    // Clear minimap
-    cx.clearRect(0, 0, size, size);
-
-    if (window.infiniteMode) {
-      // For infinite world, show nearby pieces relative to camera
-      // camera.x/y are negative pixel positions, so negate to get world grid coords
-      const camGridX = Math.floor(-camera.x / squareSize);
-      const camGridY = Math.floor(-camera.y / squareSize);
-      const VIEW_DIST = 100; // squares
-      const nearbyPieces = window.spatialHash.queryRect(
-        camGridX - VIEW_DIST,
-        camGridY - VIEW_DIST,
-        camGridX + VIEW_DIST,
-        camGridY + VIEW_DIST,
-      );
-
-      const scale = size / (VIEW_DIST * 2);
-
-      for (const piece of nearbyPieces) {
-        if (piece.type === 0 || piece.team === 0) continue;
-
-        const relX = (piece.x - camGridX + VIEW_DIST) * scale;
-        const relY = (piece.y - camGridY + VIEW_DIST) * scale;
-
-        if (relX >= 0 && relX < size && relY >= 0 && relY < size) {
-          let color = teamToColor(piece.team);
-          cx.fillStyle = `rgb(${color.r}, ${color.g}, ${color.b})`;
-          cx.fillRect(relX, relY, Math.max(2, scale), Math.max(2, scale));
-        }
-      }
-
-      // Draw player position (center of minimap)
-      cx.fillStyle = "white";
-      cx.fillRect(size / 2 - 2, size / 2 - 2, 4, 4);
-    } else {
-      // For 64x64 board, show entire board
-      const allPieces = window.spatialHash.queryRect(0, 0, 63, 63);
-      const scale = size / 64;
-
-      for (const piece of allPieces) {
-        if (piece.type === 0 || piece.team === 0) continue;
-
-        const relX = piece.x * scale;
-        const relY = piece.y * scale;
-
-        let color = teamToColor(piece.team);
-        cx.fillStyle = `rgb(${color.r}, ${color.g}, ${color.b})`;
-        cx.fillRect(relX, relY, Math.max(2, scale), Math.max(2, scale));
-      }
-
-      // Draw player position on 64x64 board
-      if (window.spatialHash) {
-        const pieces = window.spatialHash.getAllPieces();
-        for (const piece of pieces) {
-          if (piece.type === 6 && piece.team === selfId) {
-            cx.fillStyle = "white";
-            const pX = piece.x * scale;
-            const pY = piece.y * scale;
-            cx.fillRect(
-              pX,
-              pY,
-              Math.max(3, scale * 1.5),
-              Math.max(3, scale * 1.5),
-            );
-            break;
-          }
-        }
-      }
-    }
-  }
-}
 
 // Pastel color palette shared by players and AI
 const PASTEL_PALETTE = [
@@ -1494,7 +1409,7 @@ function generateTintedImages(color) {
     arr.push(c);
   }
 
-  tintedImgs.set(`${color.r}_${color.g}_${color.b}`, arr);
+  tintedImgs.set((color.r << 16) | (color.g << 8) | color.b, arr);
 }
 
 // Screen position to world position using camera state

@@ -518,6 +518,24 @@ function initPlayerSetup() {
   const previewCtx = previewCanvas.getContext("2d");
 
   console.log("🎮 Found color swatches:", colorOptions.length);
+
+  // Restore saved name/color from localStorage
+  try {
+    const savedName = localStorage.getItem("infinichess_name");
+    const savedColor = localStorage.getItem("infinichess_color");
+    if (savedName) {
+      window.playerName = savedName;
+      nameInput.value = savedName;
+    }
+    if (savedColor) {
+      window.playerColor = savedColor;
+      colorOptions.forEach((o) => {
+        o.classList.toggle("selected", o.dataset.color === savedColor);
+      });
+    }
+  } catch (e) {
+    console.warn("Failed to restore player prefs:", e);
+  }
   
   // Update preview when images load
   window.onImagesLoaded = updatePreview;
@@ -577,6 +595,14 @@ function initPlayerSetup() {
       window.playerName = "player" + Math.floor(Math.random() * 9999);
     }
     window.playerName = filterBadWords(window.playerName.toLowerCase());
+
+    // Persist name/color to localStorage
+    try {
+      localStorage.setItem("infinichess_name", window.playerName);
+      localStorage.setItem("infinichess_color", window.playerColor);
+    } catch (e) {
+      console.warn("Failed to save player prefs:", e);
+    }
 
     console.log("🚀 Start button clicked:", {
       playerName: window.playerName,

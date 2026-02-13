@@ -22,7 +22,6 @@ for (let key in Controls) {
 window.onresize = () => {
   canvas.width = canvas.w = window.innerWidth;
   canvas.height = canvas.h = window.innerHeight;
-  lastRenderedMinimap = -1e5;
   changed = true;
 };
 window.onresize();
@@ -409,24 +408,33 @@ const isMobile =
   );
 
 if (isMobile) {
-  chatInput.onclick = () => {
+  // Mobile: tap chat input to open it, tap Send or press Enter to send
+  chatInput.addEventListener("focus", () => {
+    chatOpen = true;
     chatDiv.classList.remove("hidden");
-    chatInput.setAttribute("tabindex", "0");
-    chatInput.focus();
-
     chatInput.style.opacity = "1";
+  });
 
-    let text = prompt("Send a chat message");
-    if (text.length !== 0) {
-      sendChatMsg(text);
+  chatInput.addEventListener("blur", () => {
+    // Small delay so the send action can complete before blur hides things
+    setTimeout(() => {
+      if (!chatOpen) return;
+      const text = chatInput.value.trim();
+      if (text.length !== 0) {
+        sendChatMsg(text);
+      }
+      chatOpen = false;
+      chatInput.value = "";
+      chatInput.style.opacity = "0";
+    }, 150);
+  });
+
+  chatInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      chatInput.blur();
     }
-
-    chatOpen = false;
-    chatInput.value = "";
-    chatInput.blur();
-
-    chatInput.style.opacity = "0";
-  };
+  });
 }
 
 function sendChatMsg(txt) {

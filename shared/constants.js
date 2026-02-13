@@ -406,11 +406,6 @@ globalThis.moveToNotation = (pieceType, fromX, fromY, toX, toY, isCapture) => {
     return `${symbol}${from}${cap}${to}`;
 };
 
-// Utility: Array random
-globalThis.Array.prototype.random = function() {
-    return this[Math.floor(Math.random() * this.length)];
-};
-
 // Bad word filter
 const BAD_WORDS = [
   'ass', 'bitch', 'damn', 'fuck', 'shit', 'crap', 'piss', 'cock', 'dick',

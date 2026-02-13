@@ -4,7 +4,6 @@ import fsSync from "fs";
 import "../shared/constants.js";
 import badWords from "./badwords.js";
 
-import { networkInterfaces } from "os";
 
 // Simple color name generator (replacing heavy color-2-name library)
 const colorNames = [
@@ -389,15 +388,14 @@ function broadcastToViewport(x, y, message) {
   for (const client of Object.values(clients)) {
     if (!client.camera || !client.verified) continue;
 
-    // Camera stores grid coords directly
     const dx = x - client.camera.x;
     const dy = y - client.camera.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
+    const distSq = dx * dx + dy * dy;
 
-    // Scale radius by zoom level
+    // Scale radius by zoom level, compare squared to avoid sqrt
     const effectiveRadius = VIEWPORT_RADIUS / (client.camera.scale || 1);
 
-    if (dist < effectiveRadius) {
+    if (distSq < effectiveRadius * effectiveRadius) {
       send(client, message);
     }
   }
@@ -535,6 +533,18 @@ let id = 1;
 const AI_ID_MIN = 10000;
 const AI_ID_MAX = 60000;
 
+// Shared pastel palette for AI pieces (hoisted from spawnAIPieces)
+const AI_COLOR_PALETTE = [
+  { r: 255, g: 179, b: 186 }, // #FFB3BA - pink
+  { r: 186, g: 255, b: 201 }, // #BAFFC9 - mint
+  { r: 186, g: 225, b: 255 }, // #BAE1FF - blue
+  { r: 255, g: 255, b: 186 }, // #FFFFBA - yellow
+  { r: 255, g: 186, b: 243 }, // #FFBAF3 - magenta
+  { r: 186, g: 255, b: 255 }, // #BFFFFF - cyan
+  { r: 255, g: 217, b: 186 }, // #FFD9BA - orange
+  { r: 231, g: 186, b: 255 }, // #E7BAFF - purple
+];
+
 function generateId() {
   if (id >= AI_ID_MIN) id = 1;
   return id++;
@@ -614,17 +624,7 @@ function spawnAIPieces() {
       if (nextAiId >= AI_ID_MAX) nextAiId = AI_ID_MIN;
       const aiId = nextAiId++;
 
-      const colorPalette = [
-        { r: 255, g: 179, b: 186 }, // #FFB3BA - pink
-        { r: 186, g: 255, b: 201 }, // #BAFFC9 - mint
-        { r: 186, g: 225, b: 255 }, // #BAE1FF - blue
-        { r: 255, g: 255, b: 186 }, // #FFFFBA - yellow
-        { r: 255, g: 186, b: 243 }, // #FFBAF3 - magenta
-        { r: 186, g: 255, b: 255 }, // #BFFFFF - cyan
-        { r: 255, g: 217, b: 186 }, // #FFD9BA - orange
-        { r: 231, g: 186, b: 255 }, // #E7BAFF - purple
-      ];
-      const aiColor = colorPalette[aiId % colorPalette.length];
+      const aiColor = AI_COLOR_PALETTE[aiId % AI_COLOR_PALETTE.length];
 
       setSquare(x, y, pieceType, aiId);
 
@@ -1093,8 +1093,8 @@ global.app = uWS
       ws.dead = false;
       ws.respawnTime = 0;
       ws.lastMovedTime = 0;
-      ws.chatMsgsLast5s = 0;
-      ws.lastChat5sTime = 0;
+      ws.chatMsgsLastWindow = 0;
+      ws.lastChatWindowTime = 0;
       ws.camera = { x: 0, y: 0, scale: 1 };
 
       ws.subscribe("global");
@@ -1277,13 +1277,13 @@ global.app = uWS
         if (data.byteLength > 1000) return;
 
         const now = Date.now();
-        if (now - ws.lastChat5sTime > 10000) {
-          ws.chatMsgsLast5s = 0;
-          ws.lastChat5sTime = now;
+        if (now - ws.lastChatWindowTime > 10000) {
+          ws.chatMsgsLastWindow = 0;
+          ws.lastChatWindowTime = now;
         }
 
-        ws.chatMsgsLast5s++;
-        if (ws.chatMsgsLast5s > 3) {
+        ws.chatMsgsLastWindow++;
+        if (ws.chatMsgsLastWindow > 3) {
           let chatMessage =
             "[Server] Spam detected. You cannot send messages for up to 10s.";
           if (chatMessage.length % 2 === 1) chatMessage += " ";
@@ -1306,9 +1306,9 @@ global.app = uWS
 
         if (isBadWord(chatMessage)) return;
 
-        if (chatMessage.slice(0, 7) === "/announce") {
-          chatMessage = "[SERVER] " + chatMessage.slice(8);
-          id = 65534;
+        // /announce is admin-only (disabled for regular players)
+        if (chatMessage.slice(0, 9) === "/announce") {
+          return;
         }
 
         if (chatMessage.length % 2 === 1) chatMessage += " ";
