@@ -39,7 +39,25 @@ setTimeout(() => {
 }, 3000);
 
 const canvas = document.getElementById("canvas");
-const ctx = canvas.getContext("2d");
+let ctx = null;
+
+function initializeCanvas() {
+  if (!ctx) {
+    ctx = canvas.getContext("2d", { alpha: false, willReadFrequently: false });
+    if (!ctx) {
+      console.error("❌ Failed to get 2D canvas context");
+      window.showToast("Canvas initialization failed", "error", 5000);
+      return false;
+    }
+    console.log("✅ Canvas context initialized");
+  }
+  return true;
+}
+
+// Initialize canvas on first use
+if (!initializeCanvas()) {
+  throw new Error("Cannot initialize canvas context");
+}
 
 // Spatial hash is now defined in networking.js
 // window.spatialHash is available
@@ -47,7 +65,7 @@ const ctx = canvas.getContext("2d");
 let mouse,
   lastRenderedMinimap = -1e5;
 let selectedSquareX, selectedSquareY;
-let legalMoves = [],
+let legalMoves = undefined,
   draggingSelected = false,
   moveWasDrag = false;
 let cooldownEndTime = 0;
@@ -378,8 +396,21 @@ let cx = minimapCanvas.getContext("2d");
 let firstRenderDone = false;
 
 function render() {
+  if (!ctx) {
+    if (!initializeCanvas()) {
+      requestAnimationFrame(render);
+      return;
+    }
+  }
+
   canvas.w = canvas.width;
   canvas.h = canvas.height;
+  
+  if (canvas.w <= 0 || canvas.h <= 0) {
+    requestAnimationFrame(render);
+    return;
+  }
+
   ctx.imageSmoothingEnabled = camera.scale < 2;
 
   requestAnimationFrame(render);
@@ -489,15 +520,20 @@ function render() {
     shakeOffsetY = 0;
   }
 
-  // Clear background
-  ctx.fillStyle = "#121212";
-  ctx.fillRect(0, 0, canvas.w, canvas.h);
+  try {
+    // Clear background
+    ctx.fillStyle = "#121212";
+    ctx.fillRect(0, 0, canvas.w, canvas.h);
 
-  const t = ctx.getTransform();
-
-  ctx.translate(canvas.w / 2 + shakeOffsetX, canvas.h / 2 + shakeOffsetY);
-  ctx.scale(camera.scale, camera.scale);
-  ctx.translate(camera.x, camera.y);
+    ctx.save();
+    ctx.translate(canvas.w / 2 + shakeOffsetX, canvas.h / 2 + shakeOffsetY);
+    ctx.scale(camera.scale, camera.scale);
+    ctx.translate(camera.x, camera.y);
+  } catch (e) {
+    console.error("Canvas rendering error:", e);
+    ctx.restore();
+    return;
+  }
 
   // Calculate visible range
   let topLeft = canvasPos({ x: 0, y: 0 });
@@ -625,187 +661,199 @@ function render() {
     for (const piece of visiblePieces) {
       if (piece.type === 0) continue;
 
-      if (piece.team === 0) {
-        // Neutral piece - draw white sprite with fade-in
-        const fadeAlpha = window.getPieceFadeAlpha
-          ? window.getPieceFadeAlpha(piece.x, piece.y)
-          : 1.0;
-        const fadeScale = window.getPieceFadeScale
-          ? window.getPieceFadeScale(piece.x, piece.y)
-          : 1.0;
+      try {
+        if (piece.team === 0) {
+          // Neutral piece - draw white sprite with fade-in
+          const fadeAlpha = window.getPieceFadeAlpha
+            ? window.getPieceFadeAlpha(piece.x, piece.y)
+            : 1.0;
+          const fadeScale = window.getPieceFadeScale
+            ? window.getPieceFadeScale(piece.x, piece.y)
+            : 1.0;
 
-        ctx.save();
-        ctx.globalAlpha = fadeAlpha;
+          ctx.save();
+          ctx.globalAlpha = fadeAlpha;
 
-        if (fadeScale !== 1.0) {
-          // Apply scale transform for pop-in effect
-          const centerX = piece.x * squareSize + squareSize / 2;
-          const centerY = piece.y * squareSize + squareSize / 2;
-          ctx.translate(centerX, centerY);
-          ctx.scale(fadeScale, fadeScale);
-          ctx.translate(-centerX, -centerY);
-        }
-
-        ctx.drawImage(
-          imgs[piece.type],
-          piece.x * squareSize,
-          piece.y * squareSize,
-        );
-        ctx.restore();
-      } else {
-        // Player piece - draw tinted sprite
-        if (piece.team === selfId) {
-          // Highlight own pieces with purple
-          ctx.fillStyle = "#432FE9";
-          ctx.globalAlpha = 0.6 + Math.sin(time / 320) * 0.2;
-          ctx.fillRect(
-            piece.x * squareSize,
-            piece.y * squareSize,
-            squareSize,
-            squareSize,
-          );
-          ctx.globalAlpha = 1;
-          changed = true;
-        }
-
-        const color = teamToColor(piece.team);
-        const hash = `${color.r}_${color.g}_${color.b}`;
-
-        // Manage cache size
-        if (!tintedImgs.has(hash)) {
-          if (tintedImgs.size >= MAX_TINTED_CACHE) {
-            // Remove oldest entry (first key)
-            const firstKey = tintedImgs.keys().next().value;
-            tintedImgs.delete(firstKey);
-          }
-          generateTintedImages(color);
-        }
-
-        const tintedArr = tintedImgs.get(hash);
-
-        // Check for interpolation
-        const interpKey = `${piece.x},${piece.y}`;
-        let renderX = piece.x;
-        let renderY = piece.y;
-
-        if (interpolatingPieces && interpolatingPieces[interpKey]) {
-          const interp = interpolatingPieces[interpKey];
-          // Faster lerp factor for snappier, less juddery movement
-          const lerpFactor = 1 - Math.pow(0.001, dt / 1000);
-          interp[0] = interpolate(interp[0], piece.x, lerpFactor);
-          interp[1] = interpolate(interp[1], piece.y, lerpFactor);
-
-          if (
-            Math.abs(interp[0] - piece.x) < 0.01 &&
-            Math.abs(interp[1] - piece.y) < 0.01
-          ) {
-            delete interpolatingPieces[interpKey];
+          if (fadeScale !== 1.0) {
+            // Apply scale transform for pop-in effect
+            const centerX = piece.x * squareSize + squareSize / 2;
+            const centerY = piece.y * squareSize + squareSize / 2;
+            ctx.translate(centerX, centerY);
+            ctx.scale(fadeScale, fadeScale);
+            ctx.translate(-centerX, -centerY);
           }
 
-          renderX = interp[0];
-          renderY = interp[1];
-          changed = true; // Keep rendering during interpolation
+          if (imgs && imgs[piece.type]) {
+            ctx.drawImage(
+              imgs[piece.type],
+              piece.x * squareSize,
+              piece.y * squareSize,
+            );
+          }
+          ctx.restore();
+        } else {
+          // Player piece - draw tinted sprite
+          if (piece.team === selfId) {
+            // Highlight own pieces with purple
+            ctx.fillStyle = "#432FE9";
+            ctx.globalAlpha = 0.6 + Math.sin(time / 320) * 0.2;
+            ctx.fillRect(
+              piece.x * squareSize,
+              piece.y * squareSize,
+              squareSize,
+              squareSize,
+            );
+            ctx.globalAlpha = 1;
+            changed = true;
+          }
+
+          const color = teamToColor(piece.team);
+          const hash = `${color.r}_${color.g}_${color.b}`;
+
+          // Manage cache size
+          if (!tintedImgs.has(hash)) {
+            if (tintedImgs.size >= MAX_TINTED_CACHE) {
+              // Remove oldest entry (first key)
+              const firstKey = tintedImgs.keys().next().value;
+              tintedImgs.delete(firstKey);
+            }
+            generateTintedImages(color);
+          }
+
+          const tintedArr = tintedImgs.get(hash);
+
+          // Check for interpolation
+          const interpKey = `${piece.x},${piece.y}`;
+          let renderX = piece.x;
+          let renderY = piece.y;
+
+          if (interpolatingPieces && interpolatingPieces[interpKey]) {
+            const interp = interpolatingPieces[interpKey];
+            // Faster lerp factor for snappier, less juddery movement
+            const lerpFactor = 1 - Math.pow(0.001, dt / 1000);
+            interp[0] = interpolate(interp[0], piece.x, lerpFactor);
+            interp[1] = interpolate(interp[1], piece.y, lerpFactor);
+
+            if (
+              Math.abs(interp[0] - piece.x) < 0.01 &&
+              Math.abs(interp[1] - piece.y) < 0.01
+            ) {
+              delete interpolatingPieces[interpKey];
+            }
+
+            renderX = interp[0];
+            renderY = interp[1];
+            changed = true; // Keep rendering during interpolation
+          }
+
+          // Apply fade-in effect
+          const fadeAlpha = window.getPieceFadeAlpha
+            ? window.getPieceFadeAlpha(piece.x, piece.y)
+            : 1.0;
+          const fadeScale = window.getPieceFadeScale
+            ? window.getPieceFadeScale(piece.x, piece.y)
+            : 1.0;
+          if (fadeAlpha < 1.0 || fadeScale !== 1.0) changed = true; // Keep rendering during fade
+
+          ctx.save();
+          ctx.globalAlpha = fadeAlpha;
+
+          if (fadeScale !== 1.0) {
+            // Apply scale transform for pop-in effect
+            const centerX = renderX * squareSize + squareSize / 2;
+            const centerY = renderY * squareSize + squareSize / 2;
+            ctx.translate(centerX, centerY);
+            ctx.scale(fadeScale, fadeScale);
+            ctx.translate(-centerX, -centerY);
+          }
+
+          if (tintedArr && tintedArr[piece.type]) {
+            ctx.drawImage(
+              tintedArr[piece.type],
+              renderX * squareSize,
+              renderY * squareSize,
+            );
+          }
+          ctx.restore();
         }
-
-        // Apply fade-in effect
-        const fadeAlpha = window.getPieceFadeAlpha
-          ? window.getPieceFadeAlpha(piece.x, piece.y)
-          : 1.0;
-        const fadeScale = window.getPieceFadeScale
-          ? window.getPieceFadeScale(piece.x, piece.y)
-          : 1.0;
-        if (fadeAlpha < 1.0 || fadeScale !== 1.0) changed = true; // Keep rendering during fade
-
-        ctx.save();
-        ctx.globalAlpha = fadeAlpha;
-
-        if (fadeScale !== 1.0) {
-          // Apply scale transform for pop-in effect
-          const centerX = renderX * squareSize + squareSize / 2;
-          const centerY = renderY * squareSize + squareSize / 2;
-          ctx.translate(centerX, centerY);
-          ctx.scale(fadeScale, fadeScale);
-          ctx.translate(-centerX, -centerY);
-        }
-
-        ctx.drawImage(
-          tintedArr[piece.type],
-          renderX * squareSize,
-          renderY * squareSize,
-        );
-        ctx.restore();
+      } catch (e) {
+        console.error("Piece rendering error:", e);
       }
     }
   }
 
   // Draw spawn immunity indicator (squircle with pulsing glow)
   if (window.spawnImmunities && window.spawnImmunities.size > 0) {
-    const now = performance.now();
-    const expiredImmunities = [];
+    try {
+      const now = performance.now();
+      const expiredImmunities = [];
 
-    for (const [immuneTeam, expiryTime] of window.spawnImmunities) {
-      if (now >= expiryTime) {
-        expiredImmunities.push(immuneTeam);
-        continue;
-      }
-
-      // Find the immune piece in visible pieces
-      let immunePiece = null;
-      for (const p of visiblePieces) {
-        if (p.team === immuneTeam && p.type !== 0) {
-          immunePiece = p;
-          break;
+      for (const [immuneTeam, expiryTime] of window.spawnImmunities) {
+        if (now >= expiryTime) {
+          expiredImmunities.push(immuneTeam);
+          continue;
         }
+
+        // Find the immune piece in visible pieces
+        let immunePiece = null;
+        for (const p of visiblePieces) {
+          if (p.team === immuneTeam && p.type !== 0) {
+            immunePiece = p;
+            break;
+          }
+        }
+        if (!immunePiece) continue;
+
+        const remaining = expiryTime - now;
+        const progress = 1 - remaining / SPAWN_IMMUNITY_MS;
+        const pulse = 0.4 + Math.sin(now / 200) * 0.2;
+        // Fade out in last 40% of duration
+        const fadeAlpha = progress > 0.6 ? (1 - progress) / 0.4 : 1;
+
+        const x = immunePiece.x * squareSize;
+        const y = immunePiece.y * squareSize;
+        const size = squareSize;
+        const cornerRadius = size * 0.25;
+
+        ctx.save();
+        ctx.globalAlpha = fadeAlpha * pulse;
+
+        // Squircle outline
+        const glowColor = immuneTeam === selfId ? "100, 200, 255" : "200, 200, 100";
+        ctx.strokeStyle = `rgba(${glowColor}, ${0.6 * fadeAlpha * pulse})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x + cornerRadius, y);
+        ctx.lineTo(x + size - cornerRadius, y);
+        ctx.quadraticCurveTo(x + size, y, x + size, y + cornerRadius);
+        ctx.lineTo(x + size, y + size - cornerRadius);
+        ctx.quadraticCurveTo(x + size, y + size, x + size - cornerRadius, y + size);
+        ctx.lineTo(x + cornerRadius, y + size);
+        ctx.quadraticCurveTo(x, y + size, x, y + size - cornerRadius);
+        ctx.lineTo(x, y + cornerRadius);
+        ctx.quadraticCurveTo(x, y, x + cornerRadius, y);
+        ctx.closePath();
+        ctx.stroke();
+
+        // Inner glow
+        const glowGrad = ctx.createRadialGradient(
+          x + size / 2, y + size / 2, size * 0.2,
+          x + size / 2, y + size / 2, size * 0.6
+        );
+        glowGrad.addColorStop(0, `rgba(${glowColor}, ${0.15 * fadeAlpha * pulse})`);
+        glowGrad.addColorStop(1, `rgba(${glowColor}, 0)`);
+        ctx.fillStyle = glowGrad;
+        ctx.fillRect(x, y, size, size);
+
+        ctx.restore();
+        changed = true;
       }
-      if (!immunePiece) continue;
 
-      const remaining = expiryTime - now;
-      const progress = 1 - remaining / SPAWN_IMMUNITY_MS;
-      const pulse = 0.4 + Math.sin(now / 200) * 0.2;
-      // Fade out in last 40% of duration
-      const fadeAlpha = progress > 0.6 ? (1 - progress) / 0.4 : 1;
-
-      const x = immunePiece.x * squareSize;
-      const y = immunePiece.y * squareSize;
-      const size = squareSize;
-      const cornerRadius = size * 0.25;
-
-      ctx.save();
-      ctx.globalAlpha = fadeAlpha * pulse;
-
-      // Squircle outline
-      const glowColor = immuneTeam === selfId ? "100, 200, 255" : "200, 200, 100";
-      ctx.strokeStyle = `rgba(${glowColor}, ${0.6 * fadeAlpha * pulse})`;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(x + cornerRadius, y);
-      ctx.lineTo(x + size - cornerRadius, y);
-      ctx.quadraticCurveTo(x + size, y, x + size, y + cornerRadius);
-      ctx.lineTo(x + size, y + size - cornerRadius);
-      ctx.quadraticCurveTo(x + size, y + size, x + size - cornerRadius, y + size);
-      ctx.lineTo(x + cornerRadius, y + size);
-      ctx.quadraticCurveTo(x, y + size, x, y + size - cornerRadius);
-      ctx.lineTo(x, y + cornerRadius);
-      ctx.quadraticCurveTo(x, y, x + cornerRadius, y);
-      ctx.closePath();
-      ctx.stroke();
-
-      // Inner glow
-      const glowGrad = ctx.createRadialGradient(
-        x + size / 2, y + size / 2, size * 0.2,
-        x + size / 2, y + size / 2, size * 0.6
-      );
-      glowGrad.addColorStop(0, `rgba(${glowColor}, ${0.15 * fadeAlpha * pulse})`);
-      glowGrad.addColorStop(1, `rgba(${glowColor}, 0)`);
-      ctx.fillStyle = glowGrad;
-      ctx.fillRect(x, y, size, size);
-
-      ctx.restore();
-      changed = true;
-    }
-
-    for (const id of expiredImmunities) {
-      window.spawnImmunities.delete(id);
+      for (const id of expiredImmunities) {
+        window.spawnImmunities.delete(id);
+      }
+    } catch (e) {
+      console.error("Spawn immunity rendering error:", e);
     }
   }
 
@@ -1121,79 +1169,81 @@ function render() {
     ctx.textAlign = "left"; // Reset
   }
 
-  // Minimap (simplified for infinite world)
-  renderMinimap();
 
   // Game over screen
   if (gameOver === true) {
-    gameOverAlpha = interpolate(gameOverAlpha, 1, (dt / 16.66) * 0.08);
-    changed = true;
+    try {
+      gameOverAlpha = interpolate(gameOverAlpha, 1, (dt / 16.66) * 0.08);
+      changed = true;
 
-    // Dark overlay
-    ctx.fillStyle = `rgba(0, 0, 0, ${gameOverAlpha * 0.65})`;
-    ctx.fillRect(0, 0, canvas.w, canvas.h);
+      // Dark overlay
+      ctx.fillStyle = `rgba(0, 0, 0, ${gameOverAlpha * 0.65})`;
+      ctx.fillRect(0, 0, canvas.w, canvas.h);
 
-    // Red vignette
-    const vigGrad = ctx.createRadialGradient(
-      canvas.w / 2, canvas.h / 2, canvas.w * 0.2,
-      canvas.w / 2, canvas.h / 2, canvas.w * 0.7,
-    );
-    vigGrad.addColorStop(0, "rgba(180, 0, 0, 0)");
-    vigGrad.addColorStop(1, `rgba(120, 0, 0, ${gameOverAlpha * 0.3})`);
-    ctx.fillStyle = vigGrad;
-    ctx.fillRect(0, 0, canvas.w, canvas.h);
+      // Red vignette
+      const vigGrad = ctx.createRadialGradient(
+        canvas.w / 2, canvas.h / 2, canvas.w * 0.2,
+        canvas.w / 2, canvas.h / 2, canvas.w * 0.7,
+      );
+      vigGrad.addColorStop(0, "rgba(180, 0, 0, 0)");
+      vigGrad.addColorStop(1, `rgba(120, 0, 0, ${gameOverAlpha * 0.3})`);
+      ctx.fillStyle = vigGrad;
+      ctx.fillRect(0, 0, canvas.w, canvas.h);
 
-    const centerX = canvas.w / 2;
-    const centerY = canvas.h / 2;
-    const bob = Math.sin(time / 400) * 4;
+      const centerX = canvas.w / 2;
+      const centerY = canvas.h / 2;
+      const bob = Math.sin(time / 400) * 4;
 
-    // "ELIMINATED" title
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.globalAlpha = gameOverAlpha;
+      // "ELIMINATED" title
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.globalAlpha = gameOverAlpha;
 
-    ctx.font = "700 52px 'Sometype Mono', monospace";
-    ctx.fillStyle = "#ff4444";
-    ctx.strokeStyle = "rgba(0, 0, 0, 0.8)";
-    ctx.lineWidth = 6;
-    ctx.strokeText("ELIMINATED", centerX, centerY + bob - 50);
-    ctx.fillText("ELIMINATED", centerX, centerY + bob - 50);
+      ctx.font = "700 52px 'Sometype Mono', monospace";
+      ctx.fillStyle = "#ff4444";
+      ctx.strokeStyle = "rgba(0, 0, 0, 0.8)";
+      ctx.lineWidth = 6;
+      ctx.strokeText("ELIMINATED", centerX, centerY + bob - 50);
+      ctx.fillText("ELIMINATED", centerX, centerY + bob - 50);
 
-    // Killer info
-    const killer = window.gameOverKiller || "Unknown";
-    ctx.font = "500 20px 'Sometype Mono', monospace";
-    ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
-    ctx.lineWidth = 3;
-    ctx.strokeText(`killed by ${killer}`, centerX, centerY + bob - 15);
-    ctx.fillText(`killed by ${killer}`, centerX, centerY + bob - 15);
+      // Killer info
+      const killer = window.gameOverKiller || "Unknown";
+      ctx.font = "500 20px 'Sometype Mono', monospace";
+      ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
+      ctx.lineWidth = 3;
+      ctx.strokeText(`killed by ${killer}`, centerX, centerY + bob - 15);
+      ctx.fillText(`killed by ${killer}`, centerX, centerY + bob - 15);
 
-    // Respawn countdown
-    const remaining = Math.max(0, gameOverTime + respawnTime - time);
-    const progress = 1 - remaining / respawnTime;
-    const seconds = (remaining / 1000).toFixed(1);
+      // Respawn countdown
+      const remaining = Math.max(0, gameOverTime + respawnTime - time);
+      const progress = 1 - remaining / respawnTime;
+      const seconds = (remaining / 1000).toFixed(1);
 
-    // Countdown bar background
-    const barW = 260;
-    const barH = 8;
-    const barX = centerX - barW / 2;
-    const barY = centerY + bob + 25;
+      // Countdown bar background
+      const barW = 260;
+      const barH = 8;
+      const barX = centerX - barW / 2;
+      const barY = centerY + bob + 25;
 
-    ctx.fillStyle = "rgba(255, 255, 255, 0.1)";
-    ctx.fillRect(barX, barY, barW, barH);
+      ctx.fillStyle = "rgba(255, 255, 255, 0.1)";
+      ctx.fillRect(barX, barY, barW, barH);
 
-    // Countdown bar fill
-    ctx.fillStyle = `rgba(255, 68, 68, ${0.5 + progress * 0.5})`;
-    ctx.fillRect(barX, barY, barW * progress, barH);
+      // Countdown bar fill
+      ctx.fillStyle = `rgba(255, 68, 68, ${0.5 + progress * 0.5})`;
+      ctx.fillRect(barX, barY, barW * progress, barH);
 
-    // Respawn text
-    ctx.font = "500 16px 'Sometype Mono', monospace";
-    ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
-    ctx.strokeStyle = "rgba(0, 0, 0, 0.6)";
-    ctx.lineWidth = 2;
-    ctx.strokeText(`respawning in ${seconds}s`, centerX, centerY + bob + 52);
-    ctx.fillText(`respawning in ${seconds}s`, centerX, centerY + bob + 52);
+      // Respawn text
+      ctx.font = "500 16px 'Sometype Mono', monospace";
+      ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
+      ctx.strokeStyle = "rgba(0, 0, 0, 0.6)";
+      ctx.lineWidth = 2;
+      ctx.strokeText(`respawning in ${seconds}s`, centerX, centerY + bob + 52);
+      ctx.fillText(`respawning in ${seconds}s`, centerX, centerY + bob + 52);
 
-    ctx.globalAlpha = 1;
+      ctx.globalAlpha = 1;
+    } catch (e) {
+      console.error("Game over rendering error:", e);
+    }
   }
 
   changed = false;
@@ -1274,7 +1324,6 @@ function render() {
 }
 
 function renderMinimap() {
-  // Minimap disabled for now
   return;
 
   const offset = Math.min(canvas.w, canvas.h) / 20;

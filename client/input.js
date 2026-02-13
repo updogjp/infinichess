@@ -324,10 +324,37 @@ function addToLeaderboard() {}
 // All-time top 3 leaderboard (gold/silver/bronze)
 const MEDAL_ICONS = ["🥇", "🥈", "🥉"];
 const MEDAL_COLORS = ["#FFD700", "#C0C0C0", "#CD7F32"];
+const ALLTIME_LB_KEY = "infinichess_alltime_leaderboard";
+
+function saveAllTimeLeaderboard(entries) {
+  try {
+    const data = entries.slice(0, 3).map(e => ({
+      name: e.name,
+      kills: e.kills,
+      color: e.color
+    }));
+    localStorage.setItem(ALLTIME_LB_KEY, JSON.stringify(data));
+  } catch (e) {
+    console.warn("Failed to save all-time leaderboard:", e);
+  }
+}
+
+function loadAllTimeLeaderboard() {
+  try {
+    const data = localStorage.getItem(ALLTIME_LB_KEY);
+    return data ? JSON.parse(data) : [];
+  } catch (e) {
+    console.warn("Failed to load all-time leaderboard:", e);
+    return [];
+  }
+}
 
 function updateTop3Leaderboard(entries) {
   const container = document.getElementById("top3-container");
   if (!container) return;
+
+  // Save to localStorage
+  saveAllTimeLeaderboard(entries);
 
   container.innerHTML = "";
 
@@ -367,6 +394,14 @@ function updateTop3Leaderboard(entries) {
     container.appendChild(row);
   }
 }
+
+// Load and display persistent all-time leaderboard on page load
+window.addEventListener("DOMContentLoaded", () => {
+  const savedLB = loadAllTimeLeaderboard();
+  if (savedLB.length > 0) {
+    updateTop3Leaderboard(savedLB);
+  }
+});
 
 const isMobile =
   /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
