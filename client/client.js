@@ -978,7 +978,7 @@ function render() {
 
       // Draw dragged piece at mouse position
       const color = teamToColor(selfId);
-      const hash = `${color.r}_${color.g}_${color.b}`;
+      const hash = (color.r << 16) | (color.g << 8) | color.b;
 
       if (!tintedImgs.has(hash)) {
         generateTintedImages(color);
