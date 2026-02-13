@@ -66,12 +66,16 @@ const GAME_CONFIG = {
 const AI_CONFIG = {
   enabled: true, // Set to false to disable AI players
   verboseLog: false, // Set to true to log every AI move to console
-  minCount: 8, // Minimum AI pieces always on the board regardless of player count
-  piecesPerPlayer: 2, // Additional AI pieces to spawn per online player
-  spawnRadius: 1000, // Spawn AI within this distance of online players
-  removalRadius: 8000, // Remove AI pieces if they wander beyond this distance (much larger to prevent pop-in/out)
-  moveInterval: 800, // AI makes moves every 800ms (matches interpolation timing better)
-  moveChance: 0.25, // 25% chance an AI piece moves each interval
+  baseCount: 12, // AI pieces when 0 players online (ambient life)
+  soloBonus: 8, // Extra AI for a single player (so they have targets)
+  piecesPerPlayer: 2, // Additional AI per player beyond the first
+  maxAI: 60, // Hard cap on total AI pieces
+  spawnRadius: 25, // Spawn AI within this many grid squares of a player
+  engagementRadius: 15, // Preferred spawn distance — close enough to see and fight
+  removalRadius: 60, // Remove AI if farther than this from ALL players (grid squares)
+  moveInterval: 800, // AI makes moves every 800ms
+  moveChance: 0.3, // 30% chance an AI piece moves each interval
+  playerSpawnRadius: 30, // New players spawn within this radius of the cluster center
 };
 
 // Chess-themed AI name generator
@@ -423,95 +427,80 @@ function broadcastToAll(message) {
   app.publish("global", message, true, false);
 }
 
+// Get the cluster center — average position of all spawned players, or origin if none
+function getClusterCenter() {
+  const players = Object.values(clients);
+  let sumX = 0, sumY = 0, count = 0;
+  for (const p of players) {
+    const m = playerMetadata.get(p.id);
+    if (m && (m.kingX !== 0 || m.kingY !== 0)) {
+      sumX += m.kingX;
+      sumY += m.kingY;
+      count++;
+    }
+  }
+  if (count === 0) return { x: 0, y: 0 };
+  return { x: Math.floor(sumX / count), y: Math.floor(sumY / count) };
+}
+
 // Find spawn location with king safety buffer and legal move check
+// Players spawn near the cluster center so they always have targets
 function findSpawnLocation(pieceType = 6) {
   const KING_BUFFER = 4; // Kings can't spawn within 4 squares of each other
 
-  // Define spawn boundaries based on game mode
-  let minX, maxX, minY, maxY;
-  if (GAME_CONFIG.infiniteMode) {
-    // Infinite mode: spawn near center for density (increase for spread)
-    const SPAWN_RADIUS = 50;
-    minX = -SPAWN_RADIUS;
-    maxX = SPAWN_RADIUS;
-    minY = -SPAWN_RADIUS;
-    maxY = SPAWN_RADIUS;
-  } else {
-    // 64x64 mode: spawn within board boundaries
-    minX = 0;
-    maxX = 63;
-    minY = 0;
-    maxY = 63;
+  if (!GAME_CONFIG.infiniteMode) {
+    // 64x64 mode: simple random placement
+    for (let tries = 0; tries < 200; tries++) {
+      const x = Math.floor(Math.random() * 64);
+      const y = Math.floor(Math.random() * 64);
+      if (spatialHash.has(x, y)) continue;
+
+      let tooClose = false;
+      const nearby = spatialHash.queryRect(x - KING_BUFFER, y - KING_BUFFER, x + KING_BUFFER, y + KING_BUFFER);
+      for (const piece of nearby) {
+        if (piece.type === 6 || (piece.team > 0 && piece.team < AI_ID_MIN)) { tooClose = true; break; }
+      }
+      if (tooClose) continue;
+
+      spatialHash.set(x, y, pieceType, 99999);
+      const moves = generateLegalMoves(x, y, spatialHash, 99999, 0);
+      spatialHash.set(x, y, 0, 0);
+      if (moves.length === 0) continue;
+      return { x, y };
+    }
+    return { x: Math.floor(Math.random() * 64), y: Math.floor(Math.random() * 64) };
   }
 
-  for (let tries = 0; tries < 200; tries++) {
-    let x, y;
-    if (GAME_CONFIG.infiniteMode) {
-      const angle = Math.random() * Math.PI * 2;
-      const dist = (Math.random() * (maxX - minX)) / 2;
-      x = Math.floor(Math.cos(angle) * dist);
-      y = Math.floor(Math.sin(angle) * dist);
-    } else {
-      // Random location within 64x64 board
-      x = Math.floor(Math.random() * (maxX - minX + 1) + minX);
-      y = Math.floor(Math.random() * (maxY - minY + 1) + minY);
-    }
+  // Infinite mode: spawn near the cluster center
+  const center = getClusterCenter();
+  const radius = AI_CONFIG.playerSpawnRadius;
 
-    // Check if empty
+  for (let tries = 0; tries < 200; tries++) {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = Math.random() * radius;
+    const x = Math.floor(center.x + Math.cos(angle) * dist);
+    const y = Math.floor(center.y + Math.sin(angle) * dist);
+
     if (spatialHash.has(x, y)) continue;
 
-    // Check for nearby kings/player pieces
     let tooClose = false;
-    const nearbyPieces = spatialHash.queryRect(
-      x - KING_BUFFER,
-      y - KING_BUFFER,
-      x + KING_BUFFER,
-      y + KING_BUFFER,
-    );
-
-    for (const piece of nearbyPieces) {
-      if (piece.type === 6 || (piece.team > 0 && piece.team < AI_ID_MIN)) {
-        tooClose = true;
-        break;
-      }
+    const nearby = spatialHash.queryRect(x - KING_BUFFER, y - KING_BUFFER, x + KING_BUFFER, y + KING_BUFFER);
+    for (const piece of nearby) {
+      if (piece.type === 6 || (piece.team > 0 && piece.team < AI_ID_MIN)) { tooClose = true; break; }
     }
-
     if (tooClose) continue;
 
-    // Verify the piece has at least 1 legal move from this position
-    // Temporarily place the piece to check moves, then remove it
-    spatialHash.set(x, y, pieceType, 99999); // Temp team
+    spatialHash.set(x, y, pieceType, 99999);
     const moves = generateLegalMoves(x, y, spatialHash, 99999, 0);
-    spatialHash.set(x, y, 0, 0); // Remove temp piece
-
+    spatialHash.set(x, y, 0, 0);
     if (moves.length === 0) continue;
-
     return { x, y };
   }
 
-  // Fallback: try to find ANY empty spot in 64x64 mode
-  if (!GAME_CONFIG.infiniteMode) {
-    for (let x = 0; x < 64; x++) {
-      for (let y = 0; y < 64; y++) {
-        if (!spatialHash.has(x, y)) {
-          return { x, y };
-        }
-      }
-    }
-  }
-
-  // Fallback: random location (might be occupied, but we'll handle that)
-  let x, y;
-  if (GAME_CONFIG.infiniteMode) {
-    const angle = Math.random() * Math.PI * 2;
-    const dist = Math.random() * 50000;
-    x = Math.floor(Math.cos(angle) * dist);
-    y = Math.floor(Math.sin(angle) * dist);
-  } else {
-    x = Math.floor(Math.random() * 64);
-    y = Math.floor(Math.random() * 64);
-  }
-  return { x, y };
+  // Fallback: slightly larger radius
+  const angle = Math.random() * Math.PI * 2;
+  const dist = Math.random() * radius * 2;
+  return { x: Math.floor(center.x + Math.cos(angle) * dist), y: Math.floor(center.y + Math.sin(angle) * dist) };
 }
 
 // Send viewport state to a client
@@ -579,6 +568,17 @@ function decodeText(u8array, startPos = 0, endPos = Infinity) {
 const aiPieces = new Map(); // aiPieceId -> {x, y, type, lastMove}
 let nextAiId = AI_ID_MIN;
 
+// Calculate target AI count based on player count (inversely scaled)
+function getTargetAICount(playerCount) {
+  if (playerCount === 0) return AI_CONFIG.baseCount;
+  if (playerCount === 1) return AI_CONFIG.baseCount + AI_CONFIG.soloBonus;
+  // More players = less AI per player, but always some ambient AI
+  // Formula: base + soloBonus tapers off, plus small per-player bonus
+  const scaledBonus = Math.floor(AI_CONFIG.soloBonus / Math.sqrt(playerCount));
+  const perPlayer = AI_CONFIG.piecesPerPlayer * playerCount;
+  return Math.min(AI_CONFIG.maxAI, AI_CONFIG.baseCount + scaledBonus + perPlayer);
+}
+
 // Spawn AI pieces near online players
 function spawnAIPieces() {
   if (!AI_CONFIG.enabled) return;
@@ -586,50 +586,53 @@ function spawnAIPieces() {
   const players = Object.values(clients);
   const spawnedPlayers = players.filter(p => {
     const m = playerMetadata.get(p.id);
-    return m && m.kingX !== undefined && m.kingX !== 0;
+    return m && m.kingX !== undefined && (m.kingX !== 0 || m.kingY !== 0);
   });
 
-  const targetAIPieces = Math.max(AI_CONFIG.minCount, players.length * AI_CONFIG.piecesPerPlayer);
-  const currentAIPieces = aiPieces.size;
+  const targetAIPieces = getTargetAICount(spawnedPlayers.length);
 
   // Spawn more AI if below target
-  if (currentAIPieces < targetAIPieces) {
-    const toSpawn = Math.min(10, targetAIPieces - currentAIPieces);
+  if (aiPieces.size < targetAIPieces) {
+    const toSpawn = Math.min(5, targetAIPieces - aiPieces.size);
 
     for (let i = 0; i < toSpawn; i++) {
       let centerX = 0;
       let centerY = 0;
 
-      // Spawn near a random online player if any, otherwise near origin
       if (spawnedPlayers.length > 0) {
+        // Pick a random player to spawn near — weighted toward players with fewer nearby AI
         const player = spawnedPlayers[Math.floor(Math.random() * spawnedPlayers.length)];
         const meta = playerMetadata.get(player.id);
         centerX = meta.kingX;
         centerY = meta.kingY;
+      } else {
+        // No players: spawn near cluster center (origin initially)
+        const center = getClusterCenter();
+        centerX = center.x;
+        centerY = center.y;
       }
 
-      // Spawn within radius
+      // Spawn within engagement radius (close enough to see and fight)
+      // 70% chance: tight engagement radius, 30% chance: wider patrol radius
+      const tight = Math.random() < 0.7;
+      const radius = tight ? AI_CONFIG.engagementRadius : AI_CONFIG.spawnRadius;
       const angle = Math.random() * Math.PI * 2;
-      const dist = Math.random() * AI_CONFIG.spawnRadius;
-      let x = Math.floor(centerX + (Math.cos(angle) * dist) / 150);
-      let y = Math.floor(centerY + (Math.sin(angle) * dist) / 150);
+      const dist = (Math.random() * 0.7 + 0.3) * radius; // Avoid spawning right on top
+      let x = Math.floor(centerX + Math.cos(angle) * dist);
+      let y = Math.floor(centerY + Math.sin(angle) * dist);
 
-      // Clamp to board boundaries in 64x64 mode
       if (!GAME_CONFIG.infiniteMode) {
         x = Math.max(0, Math.min(63, x));
         y = Math.max(0, Math.min(63, y));
       }
 
-      // Check if square is empty
       const existing = spatialHash.get(x, y);
       if (existing.type !== 0) continue;
 
-      // AI pieces start as King (follow player evolution system)
       const pieceType = globalThis.PIECE_KING;
       if (nextAiId >= AI_ID_MAX) nextAiId = AI_ID_MIN;
       const aiId = nextAiId++;
 
-      // Assign AI piece a color from the palette
       const colorPalette = [
         { r: 255, g: 179, b: 186 }, // #FFB3BA - pink
         { r: 186, g: 255, b: 201 }, // #BAFFC9 - mint
@@ -642,10 +645,8 @@ function spawnAIPieces() {
       ];
       const aiColor = colorPalette[aiId % colorPalette.length];
 
-      // Set piece on board with AI color
       setSquare(x, y, pieceType, aiId);
 
-      // Store AI color metadata with chess-themed name
       const aiName = generateAIName(aiId);
       playerMetadata.set(aiId, {
         name: aiName,
@@ -654,37 +655,33 @@ function spawnAIPieces() {
         kingY: y,
       });
 
-      // Add AI to leaderboard
       if (!leaderboard.has(aiId)) {
         leaderboard.set(aiId, 0);
       }
 
-      // Track AI piece with random thinking time and move offset
-      // thinkingDeadline: when the AI finishes "thinking" and can move
-      // lastMove: when the AI last moved (for cooldown)
       aiPieces.set(aiId, {
         x,
         y,
         type: pieceType,
         lastMove: Date.now() + Math.random() * AI_CONFIG.moveInterval,
-        thinkingDeadline: Date.now() + Math.random() * 2000, // 0-2s thinking time
+        thinkingDeadline: Date.now() + Math.random() * 2000,
       });
     }
   }
 
-  // Remove AI pieces that are too far from all spawned players
-  // But never go below minCount
-  if (spawnedPlayers.length > 0 && aiPieces.size > AI_CONFIG.minCount) {
+  // Remove AI pieces that are too far from ALL players (or over target count)
+  const minKeep = Math.max(AI_CONFIG.baseCount, Math.floor(targetAIPieces * 0.5));
+  if (spawnedPlayers.length > 0) {
     for (const [aiId, aiPiece] of aiPieces) {
-      if (aiPieces.size <= AI_CONFIG.minCount) break; // Keep minimum
+      if (aiPieces.size <= minKeep) break;
 
       let nearPlayer = false;
       for (const player of spawnedPlayers) {
         const meta = playerMetadata.get(player.id);
         if (!meta) continue;
 
-        const dx = (aiPiece.x - meta.kingX) * 150;
-        const dy = (aiPiece.y - meta.kingY) * 150;
+        const dx = aiPiece.x - meta.kingX;
+        const dy = aiPiece.y - meta.kingY;
         const dist = Math.sqrt(dx * dx + dy * dy);
 
         if (dist < AI_CONFIG.removalRadius) {
@@ -696,7 +693,40 @@ function spawnAIPieces() {
       if (!nearPlayer) {
         setSquare(aiPiece.x, aiPiece.y, 0, 0);
         aiPieces.delete(aiId);
+        leaderboard.delete(aiId);
+        playerMetadata.delete(aiId);
       }
+    }
+  }
+
+  // If over target, cull the farthest AI from any player
+  while (aiPieces.size > targetAIPieces && aiPieces.size > minKeep) {
+    let farthestId = null;
+    let farthestDist = -1;
+
+    for (const [aiId, aiPiece] of aiPieces) {
+      let minDist = Infinity;
+      for (const player of spawnedPlayers) {
+        const meta = playerMetadata.get(player.id);
+        if (!meta) continue;
+        const dx = aiPiece.x - meta.kingX;
+        const dy = aiPiece.y - meta.kingY;
+        minDist = Math.min(minDist, Math.sqrt(dx * dx + dy * dy));
+      }
+      if (minDist > farthestDist) {
+        farthestDist = minDist;
+        farthestId = aiId;
+      }
+    }
+
+    if (farthestId !== null) {
+      const ai = aiPieces.get(farthestId);
+      if (ai) setSquare(ai.x, ai.y, 0, 0);
+      aiPieces.delete(farthestId);
+      leaderboard.delete(farthestId);
+      playerMetadata.delete(farthestId);
+    } else {
+      break;
     }
   }
 }
@@ -876,7 +906,7 @@ if (AI_CONFIG.enabled) {
     }
   }, 5000);
   console.log(
-    `[AI] System enabled - min ${AI_CONFIG.minCount}, +${AI_CONFIG.piecesPerPlayer} per player`,
+    `[AI] System enabled - base ${AI_CONFIG.baseCount}, solo bonus ${AI_CONFIG.soloBonus}, +${AI_CONFIG.piecesPerPlayer}/player, max ${AI_CONFIG.maxAI}`,
   );
 } else {
   console.log(`[AI] System disabled`);
