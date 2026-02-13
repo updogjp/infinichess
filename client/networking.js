@@ -100,6 +100,7 @@ window.onTurnstileSuccess = (token) => {
         playBtn.addEventListener("click", () => {
           document.getElementById("fullscreenDiv").classList.add("hidden");
           document.getElementById("playerSetupDiv").classList.remove("hidden");
+          if (window.startRenderLoop) window.startRenderLoop();
           initPlayerSetup();
         });
       }

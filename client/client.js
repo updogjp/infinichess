@@ -267,10 +267,14 @@ for (let i = 0; i < srcs.length; i++) {
     console.log(`🖼️ Loaded image: ${srcs[i]}.png (${6 - imgsToLoad}/6)`);
     if (imgsToLoad === 0) {
       imgsLoaded = true;
-      console.log("✅ All images loaded, starting render loop");
+      console.log("✅ All images loaded, ready to render");
       window.imgs = imgs;
       if (onImagesLoaded) onImagesLoaded();
-      requestAnimationFrame(render);
+      // Render loop will start after captcha is completed and PLAY button is clicked
+      window.startRenderLoop = () => {
+        console.log("🎮 Starting render loop");
+        requestAnimationFrame(render);
+      };
     }
   };
   img.onerror = () => {
