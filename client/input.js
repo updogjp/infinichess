@@ -456,6 +456,7 @@ if (isMobile) {
   chatInput.addEventListener("focus", () => {
     chatOpen = true;
     chatDiv.classList.remove("hidden");
+    if (chatBtn) chatBtn.classList.add("hidden");
     chatInput.style.opacity = "1";
   });
 
