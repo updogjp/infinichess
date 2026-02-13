@@ -224,14 +224,13 @@ ws.addEventListener("message", function (data) {
     const endPiece = spatialHash.get(finX, finY);
     const isCapture = endPiece.type !== 0;
 
+    // Detect if WE were captured (our piece is at the destination)
+    const weWereCaptured = isCapture && endPiece.team === selfId && playerId !== selfId;
+
     // Update spatial hash: move piece from start to finish
-    // For self moves this may already be done optimistically, but re-applying is safe
     if (movingPiece.type !== 0) {
       spatialHash.set(startX, startY, 0, 0);
       spatialHash.set(finX, finY, movingPiece.type, playerId);
-    } else {
-      // Piece already moved (optimistic update) — just ensure destination is correct
-      spatialHash.set(finX, finY, spatialHash.get(finX, finY).type || endPiece.type, playerId);
     }
 
     // Play sounds for all visible captures/moves (not just self)
@@ -239,11 +238,13 @@ ws.addEventListener("message", function (data) {
       try {
         if (isCapture) {
           const snd = audios.capture[Math.random() < 0.5 ? 1 : 0].cloneNode();
-          // Quieter for non-self captures
           snd.volume = playerId === selfId ? 1.0 : 0.4;
           snd.play();
         } else if (playerId === selfId) {
           audios.move[Math.random() < 0.5 ? 0 : 1].play();
+        }
+        if (weWereCaptured && audios.gameover) {
+          try { audios.gameover[0].play(); } catch (e2) {}
         }
       } catch (e) {}
     }
@@ -252,6 +253,20 @@ ws.addEventListener("message", function (data) {
     if (isCapture && window.triggerCaptureEffect) {
       const attackerColor = teamToColor(playerId);
       window.triggerCaptureEffect(finX, finY, attackerColor, endPiece.type);
+    }
+
+    // If we were captured, trigger game over
+    if (weWereCaptured) {
+      gameOver = true;
+      gameOverTime = performance.now();
+      gameOverAlpha = 0;
+      // Determine killer name
+      const killerData = window.playerNamesMap && window.playerNamesMap[playerId];
+      window.gameOverKiller = killerData ? killerData.name : (playerId >= 10000 ? "AI" : "Player #" + playerId);
+      selectedSquareX = selectedSquareY = undefined;
+      legalMoves = undefined;
+      draggingSelected = false;
+      moveWasDrag = false;
     }
 
     // Track AI cooldowns for rendering cooldown bars
@@ -274,7 +289,7 @@ ws.addEventListener("message", function (data) {
       });
     }
 
-    // Clear selection if our piece moved
+    // Clear selection if our piece moved (server confirmed)
     if (playerId === selfId) {
       if (selectedSquareX === startX && selectedSquareY === startY) {
         unconfirmedSX =

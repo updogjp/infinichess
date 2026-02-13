@@ -447,6 +447,12 @@ function findSpawnLocation(pieceType = 6) {
       if (moves.length === 0) continue;
       return { x, y };
     }
+    // Fallback: keep trying random positions, skip occupied tiles
+    for (let f = 0; f < 50; f++) {
+      const fx = Math.floor(Math.random() * 64);
+      const fy = Math.floor(Math.random() * 64);
+      if (!spatialHash.has(fx, fy)) return { x: fx, y: fy };
+    }
     return { x: Math.floor(Math.random() * 64), y: Math.floor(Math.random() * 64) };
   }
 
@@ -476,10 +482,17 @@ function findSpawnLocation(pieceType = 6) {
     return { x, y };
   }
 
-  // Fallback: slightly larger radius
-  const angle = Math.random() * Math.PI * 2;
-  const dist = Math.random() * radius * 2;
-  return { x: Math.floor(center.x + Math.cos(angle) * dist), y: Math.floor(center.y + Math.sin(angle) * dist) };
+  // Fallback: slightly larger radius, skip occupied tiles
+  for (let f = 0; f < 50; f++) {
+    const fAngle = Math.random() * Math.PI * 2;
+    const fDist = Math.random() * radius * 2;
+    const fx = Math.floor(center.x + Math.cos(fAngle) * fDist);
+    const fy = Math.floor(center.y + Math.sin(fAngle) * fDist);
+    if (!spatialHash.has(fx, fy)) return { x: fx, y: fy };
+  }
+  const fAngle = Math.random() * Math.PI * 2;
+  const fDist = Math.random() * radius * 2;
+  return { x: Math.floor(center.x + Math.cos(fAngle) * fDist), y: Math.floor(center.y + Math.sin(fAngle) * fDist) };
 }
 
 // Send viewport state to a client
