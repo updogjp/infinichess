@@ -15,8 +15,6 @@
       rel="stylesheet"
     />
     <link href="/client/style.css" rel="stylesheet" type="text/css" />
-
-    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
   </head>
 
   <body>
@@ -42,27 +40,6 @@
         <div class="splash-loader">
           <div class="splash-loader-bar"></div>
         </div>
-      </div>
-    </div>
-
-    <!-- Captcha Screen -->
-    <div id="fullscreenDiv" class="hidden">
-      <div class="auth-container">
-        <div class="auth-header">
-          <h1>INFINICHESS</h1>
-          <p class="subtitle">MASSIVELY MULTIPLAYER CHESS.</p>
-        </div>
-        <div
-          id="turnstileWidget"
-          class="cf-turnstile"
-          data-sitekey="__TURNSTILE_SITE_KEY__"
-          data-theme="dark"
-          data-callback="onTurnstileSuccess"
-        ></div>
-        <div id="turnstileError" class="hidden" style="color: #ff6b6b; margin-top: 10px; font-size: 12px;">
-          Captcha not configured. Contact admin.
-        </div>
-        <button id="captchaPlayBtn" class="captcha-play-btn hidden">[ PLAY ]</button>
       </div>
     </div>
 

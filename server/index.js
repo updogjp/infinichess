@@ -30,8 +30,6 @@ function simpleColorName(num) {
   return colorNames[index] + num.toString().slice(-3);
 }
 
-const captchaSecretKey = process.env.TURNSTILE_SECRET_KEY;
-
 function serverIp() {
   const nets = networkInterfaces();
   const results = {};
@@ -57,28 +55,6 @@ const isProd = !isDev;
 // Only log important startup info
 if (isDev) {
   console.log("🔧 DEV MODE: CAPTCHA BYPASSED");
-}
-
-// Verify Turnstile token (production only)
-async function verifyTurnstileToken(token) {
-  if (isDev) return true; // Bypass in development
-  
-  try {
-    const response = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        secret: captchaSecretKey,
-        response: token,
-      }),
-    });
-    
-    const data = await response.json();
-    return data.success === true;
-  } catch (error) {
-    console.error("Turnstile verification error:", error);
-    return false;
-  }
 }
 
 // Game mode configuration
@@ -1232,50 +1208,17 @@ global.app = uWS
         return;
       }
 
-      // Unverified players: verify captcha token (production) or auto-verify (development)
+      // Auto-verify all clients (captcha removed)
       if (ws.verified === false) {
-        // Check for Turnstile token in message
-        const tokenLength = u8[0];
-        if (tokenLength > 0 && tokenLength < 255) {
-          const token = decodeText(u8, 1, 1 + tokenLength);
-          
-          // Verify token asynchronously
-          verifyTurnstileToken(token).then((isValid) => {
-            if (!isValid) {
-              console.log(`[Auth] Invalid Turnstile token from client ${ws.id}`);
-              return;
-            }
-            
-            // Token verified, mark as verified
-            if (!playerMetadata.has(ws.id)) {
-              playerMetadata.set(ws.id, {
-                name: teamToName(ws.id),
-                color: teamToColor(ws.id),
-                kingX: 0,
-                kingY: 0,
-              });
-            }
-            ws.verified = true;
-            console.log(`[Auth] Client ${ws.id} verified via Turnstile`);
+        if (!playerMetadata.has(ws.id)) {
+          playerMetadata.set(ws.id, {
+            name: teamToName(ws.id),
+            color: teamToColor(ws.id),
+            kingX: 0,
+            kingY: 0,
           });
-          return;
         }
-        
-        // Development mode: auto-verify without token
-        if (isDev) {
-          if (!playerMetadata.has(ws.id)) {
-            playerMetadata.set(ws.id, {
-              name: teamToName(ws.id),
-              color: teamToColor(ws.id),
-              kingX: 0,
-              kingY: 0,
-            });
-          }
-          ws.verified = true;
-          return;
-        }
-        
-        // Production mode without token: reject
+        ws.verified = true;
         return;
       }
 
@@ -1515,21 +1458,7 @@ app.get("/", (res, req) => {
   res.writeHeader("Expires", "0");
 
   let html = fsSync.readFileSync("client/index.html", "utf-8");
-  const turnstileSiteKey = process.env.TURNSTILE_SITE_KEY || "";
-  if (!turnstileSiteKey) {
-    console.warn("⚠️ TURNSTILE_SITE_KEY environment variable not set!");
-  } else {
-    console.log("✓ Injecting Turnstile sitekey:", turnstileSiteKey.substring(0, 10) + "...");
-  }
-  html = html.replace("__TURNSTILE_SITE_KEY__", turnstileSiteKey);
   res.end(html);
-});
-
-app.get("/config", (res, req) => {
-  res.writeHeader("Content-Type", "application/json");
-  res.end(JSON.stringify({
-    turnstileSiteKey: process.env.TURNSTILE_SITE_KEY || "",
-  }));
 });
 
 global.fileServedIps = {};

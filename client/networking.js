@@ -2,7 +2,6 @@ let ws = null;
 let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 8;
 const BASE_RECONNECT_DELAY = 1000; // 1s, doubles each attempt
-let turnstileToken = null;
 let connected = false;
 const msgs = [];
 
@@ -75,48 +74,6 @@ window.aiCooldowns = new Map();
 // Active chat bubbles
 const activeChatBubbles = new Map(); // playerId -> { text, time, element }
 
-// Show the PLAY button and attach its click handler (called once)
-let playButtonAttached = false;
-function showPlayButton(token) {
-  if (playButtonAttached) return;
-  playButtonAttached = true;
-
-  // Send token to server for verification
-  if (token && ws && ws.readyState === WebSocket.OPEN) {
-    const tokenBytes = new TextEncoder().encode(token);
-    const buf = new Uint8Array(1 + tokenBytes.length);
-    buf[0] = tokenBytes.length;
-    buf.set(tokenBytes, 1);
-    console.log("📤 Sending Turnstile token to server, buffer length:", buf.length);
-    ws.send(buf);
-  }
-
-  console.log("✓ Showing PLAY button");
-  const turnstileWidget = document.getElementById("turnstileWidget");
-  if (turnstileWidget) turnstileWidget.classList.add("hidden");
-  const playBtn = document.getElementById("captchaPlayBtn");
-  if (playBtn) {
-    playBtn.classList.remove("hidden");
-    playBtn.addEventListener("click", () => {
-      document.getElementById("fullscreenDiv").classList.add("hidden");
-      document.getElementById("playerSetupDiv").classList.remove("hidden");
-      if (window.startRenderLoop) window.startRenderLoop();
-      initPlayerSetup();
-    });
-  }
-}
-
-// Turnstile callback - called when captcha is completed
-window.onTurnstileSuccess = (token) => {
-  console.log("✓ Turnstile captcha completed, token:", token.substring(0, 20) + "...");
-  turnstileToken = token;
-  showPlayButton(token);
-};
-
-// Debug: Log when Turnstile script loads
-window.onTurnstileLoad = () => {
-  console.log("✓ Turnstile script loaded, window.turnstile available:", !!window.turnstile);
-};
 
 function setupWebSocketHandlers() {
 ws.addEventListener("message", function (data) {
@@ -839,39 +796,6 @@ window.updateChatBubbles = function () {
   });
 };
 
-// Wait for WebSocket connection and validate Turnstile setup
-{
-  const checkConnection = () => {
-    if (ws.readyState === WebSocket.OPEN) {
-      console.log("✓ WebSocket connected, validating Turnstile...");
-      
-      const turnstileWidget = document.getElementById("turnstileWidget");
-      const sitekey = turnstileWidget?.getAttribute("data-sitekey");
-      
-      if (!sitekey || sitekey === "__TURNSTILE_SITE_KEY__") {
-        if (window.isDev) {
-          // DEV MODE: skip captcha entirely, just show PLAY button
-          console.log("🔧 DEV MODE: Skipping captcha, showing PLAY button");
-          if (turnstileWidget) turnstileWidget.classList.add("hidden");
-          const errorDiv = document.getElementById("turnstileError");
-          if (errorDiv) errorDiv.classList.add("hidden");
-          showPlayButton("dev-token");
-        } else {
-          console.error("❌ Turnstile sitekey not configured!");
-          const errorDiv = document.getElementById("turnstileError");
-          if (errorDiv) errorDiv.classList.remove("hidden");
-        }
-      } else {
-        console.log("✓ Turnstile sitekey configured:", sitekey.substring(0, 10) + "...");
-      }
-    } else {
-      console.log(`⏳ Waiting for WebSocket... state=${ws.readyState}`);
-      setTimeout(checkConnection, 100);
-    }
-  };
-
-  checkConnection();
-}
 
 const encoder = new TextEncoder();
 function encodeAtPosition(string, u8array, position) {

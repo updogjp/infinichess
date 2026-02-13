@@ -4,15 +4,19 @@ const HOST = window.isDev
   ? location.origin.replace(/^http/, "ws")
   : "wss://api.infinichess.io";
 
-// Splash screen → captcha transition after 5 seconds
+// Splash screen → player setup transition after 5 seconds (no captcha)
 setTimeout(() => {
   const splash = document.getElementById("splashScreen");
-  const captcha = document.getElementById("fullscreenDiv");
+  const playerSetup = document.getElementById("playerSetupDiv");
   if (splash) {
     splash.classList.add("splash-fade-out");
     setTimeout(() => {
       splash.style.display = "none";
-      if (captcha) captcha.classList.remove("hidden");
+      if (playerSetup) {
+        playerSetup.classList.remove("hidden");
+        if (window.startRenderLoop) window.startRenderLoop();
+        initPlayerSetup();
+      }
     }, 600);
   }
 }, 5000);
