@@ -3,6 +3,8 @@ let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 8;
 const BASE_RECONNECT_DELAY = 1000; // 1s, doubles each attempt
 let turnstileToken = null;
+let connected = false;
+const msgs = [];
 
 function connectWebSocket() {
   ws = new WebSocket(HOST);
@@ -483,10 +485,6 @@ ws.addEventListener("message", function (data) {
   }
 });
 
-let connected = false;
-window.send = () => {};
-
-const msgs = [];
 window.send = (data) => {
   msgs.push(data);
 };
