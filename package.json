@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node ./server/index.js",
     "dev": "nodemon ./server/index.js --watch server --watch shared --watch client",
-    "build": "node --check server/index.js && rm -rf dist && mkdir -p dist/client dist/shared && cp client/*.html dist/ && cp client/*.css dist/client/ && cp client/*.js dist/client/ && cp -r client/assets dist/client/ && cp shared/constants.js dist/shared/ && cp client/_redirects dist/ && echo 'Build successful'",
+    "build": "node --check server/index.js && rm -rf dist && mkdir -p dist/client dist/shared && cp client/*.html dist/ && cp client/*.css dist/client/ && cp client/*.js dist/client/ && cp -r client/assets dist/client/ && cp shared/constants.js dist/shared/ && cp client/_worker.js dist/ && echo 'Build successful'",
     "clean": "rm -f server/*.dat"
   },
   "type": "module",
@@ -25,7 +25,7 @@
     "icon": "client/assets/infinichess.png"
   },
   "engines": {
-    "node": "20.x"
+    "node": ">=20.0.0"
   },
   "dependencies": {
     "bad-words": "^4.0.0",
