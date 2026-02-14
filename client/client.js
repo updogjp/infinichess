@@ -1,3 +1,8 @@
+// Initialize error tracking as early as possible
+if (window.errorTracker) {
+  window.errorTracker.init();
+}
+
 // Determine WebSocket URL based on environment
 window.isDev = location.hostname === "localhost" || location.hostname === "127.0.0.1";
 const HOST = window.isDev 

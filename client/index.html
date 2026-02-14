@@ -2,9 +2,15 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
     <title>Infinichess</title>
-    <meta name="description" content="Massively multiplayer chess on an infinite, persistent board. Spawn as a King, capture to evolve, compete for the leaderboard." />
+    <meta
+      name="description"
+      content="Massively multiplayer chess on an infinite, persistent board. Spawn as a King, capture to evolve, compete for the leaderboard."
+    />
     <meta name="msapplication-TileColor" content="#0a0a0a" />
     <meta name="theme-color" content="#0a0a0a" />
     <link rel="icon" type="image/png" href="/client/assets/infinichess.png" />
@@ -12,9 +18,18 @@
     <!-- Open Graph / Facebook -->
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://infinichess.io/" />
-    <meta property="og:title" content="Infinichess — Massively Multiplayer Chess" />
-    <meta property="og:description" content="Spawn as a King on an infinite board. Capture AI and players to evolve through Knight, Bishop, Rook, and Queen. Compete for the all-time leaderboard." />
-    <meta property="og:image" content="https://infinichess.io/client/assets/infinichess_512.png" />
+    <meta
+      property="og:title"
+      content="Infinichess — Massively Multiplayer Chess"
+    />
+    <meta
+      property="og:description"
+      content="Spawn as a King on an infinite board. Capture AI and players to evolve through Knight, Bishop, Rook, and Queen. Compete for the all-time leaderboard."
+    />
+    <meta
+      property="og:image"
+      content="https://infinichess.io/client/assets/infinichess_512.png"
+    />
     <meta property="og:image:width" content="512" />
     <meta property="og:image:height" content="512" />
     <meta property="og:site_name" content="Infinichess" />
@@ -22,9 +37,18 @@
     <!-- Twitter Card -->
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:url" content="https://infinichess.io/" />
-    <meta name="twitter:title" content="Infinichess — Massively Multiplayer Chess" />
-    <meta name="twitter:description" content="Spawn as a King on an infinite board. Capture AI and players to evolve through Knight, Bishop, Rook, and Queen." />
-    <meta name="twitter:image" content="https://infinichess.io/client/assets/infinichess_512.png" />
+    <meta
+      name="twitter:title"
+      content="Infinichess — Massively Multiplayer Chess"
+    />
+    <meta
+      name="twitter:description"
+      content="Spawn as a King on an infinite board. Capture AI and players to evolve through Knight, Bishop, Rook, and Queen."
+    />
+    <meta
+      name="twitter:image"
+      content="https://infinichess.io/client/assets/infinichess_512.png"
+    />
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -40,18 +64,37 @@
     <div id="splashScreen">
       <div class="splash-container">
         <div class="splash-logo-wrap">
-          <img src="/client/assets/infinichess_512.png" alt="Infinichess" class="splash-logo" />
+          <img
+            src="/client/assets/infinichess_512.png"
+            alt="Infinichess"
+            class="splash-logo"
+          />
         </div>
         <h1 class="splash-title">INFINICHESS</h1>
         <p class="splash-subtitle">MASSIVELY MULTIPLAYER CHESS</p>
         <div class="splash-links">
-          <a href="https://github.com/updogjp/infinichess" target="_blank" rel="noopener" class="splash-link">
+          <a
+            href="https://github.com/updogjp/infinichess"
+            target="_blank"
+            rel="noopener"
+            class="splash-link"
+          >
             <span class="splash-link-icon">&#9679;</span> GITHUB
           </a>
-          <a href="https://discord.com/invite/tvbEDUZvvB" target="_blank" rel="noopener" class="splash-link">
+          <a
+            href="https://discord.com/invite/tvbEDUZvvB"
+            target="_blank"
+            rel="noopener"
+            class="splash-link"
+          >
             <span class="splash-link-icon">&#9679;</span> DISCORD
           </a>
-          <a href="https://x.com/updogjp" target="_blank" rel="noopener" class="splash-link">
+          <a
+            href="https://x.com/updogjp"
+            target="_blank"
+            rel="noopener"
+            class="splash-link"
+          >
             <span class="splash-link-icon">&#9679;</span> TWITTER
           </a>
         </div>
@@ -139,7 +182,9 @@
             <span class="evo-arrow">→</span>
             <span class="evo-step">♕ Queen</span>
           </div>
-          <div class="evo-hint">Capture pieces to evolve. Final form: Queen.</div>
+          <div class="evo-hint">
+            Capture pieces to evolve. Final form: Queen.
+          </div>
         </div>
 
         <div class="preview-panel">
@@ -151,9 +196,7 @@
         <button id="startGameBtn" class="deploy-btn">
           [ INITIATE_DEPLOYMENT ]
         </button>
-        <button id="spectateBtn" class="spectate-btn">
-          [ SPECTATE ]
-        </button>
+        <button id="spectateBtn" class="spectate-btn">[ SPECTATE ]</button>
       </div>
     </div>
 
@@ -245,7 +288,9 @@
     <button id="chatBtn" class="chat-btn" title="Open chat">CHAT</button>
 
     <!-- Respawn Button (shown on eliminated screen) -->
-    <button id="respawnBtn" class="respawn-btn hidden" title="Respawn">RESPAWN</button>
+    <button id="respawnBtn" class="respawn-btn hidden" title="Respawn">
+      RESPAWN
+    </button>
 
     <!-- Kill Feed -->
     <div id="killFeed" class="kill-feed"></div>
@@ -284,6 +329,7 @@
         apiHost: 'https://us.i.posthog.com',
       });
     </script>
+    <script src="/client/errorTracking.js"></script>
     <script src="/shared/constants.js"></script>
     <script src="/client/input.js"></script>
     <script src="/client/client.js"></script>
