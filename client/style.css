@@ -1461,7 +1461,7 @@ body {
 .chat-btn {
   position: fixed;
   left: 10px;
-  bottom: 10px;
+  bottom: 50px;
   z-index: 101;
   background: rgba(10, 10, 10, 0.9);
   border: 1px solid var(--border);
@@ -1488,6 +1488,41 @@ body {
 }
 
 .chat-btn.hidden {
+  display: none;
+}
+
+/* Respawn button — centered on eliminated screen */
+.respawn-btn {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 102;
+  background: rgba(10, 10, 10, 0.9);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-family: "Sometype Mono", monospace;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  padding: 10px 20px;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: all 0.15s ease;
+}
+
+.respawn-btn:hover {
+  background: rgba(30, 30, 30, 0.95);
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+  transform: translate(-50%, -50%) translateY(-2px);
+}
+
+.respawn-btn:active {
+  transform: translate(-50%, -50%) translateY(0px);
+}
+
+.respawn-btn.hidden {
   display: none;
 }
 
@@ -1520,7 +1555,7 @@ body {
   }
   .chat-btn {
     left: 5px;
-    bottom: 5px;
+    bottom: 45px;
     padding: 5px 8px;
     font-size: 8px;
     letter-spacing: 1px;

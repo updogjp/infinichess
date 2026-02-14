@@ -1341,6 +1341,12 @@ function render() {
       gameOverAlpha = interpolate(gameOverAlpha, 1, (dt / 16.66) * 0.08);
       changed = true;
 
+      // Show respawn button
+      const respawnBtn = document.getElementById("respawnBtn");
+      if (respawnBtn && respawnBtn.classList.contains("hidden")) {
+        respawnBtn.classList.remove("hidden");
+      }
+
       // Dark overlay
       ctx.fillStyle = `rgba(0, 0, 0, ${gameOverAlpha * 0.65})`;
       ctx.fillRect(0, 0, canvas.w, canvas.h);
@@ -1409,6 +1415,14 @@ function render() {
     } catch (e) {
       console.error("🔴 [RENDER] Game over screen error:", e.message, e.stack);
       if (window.posthog && window.posthog.capture) window.posthog.capture('render_error', { phase: 'game_over', error: e.message });
+    }
+  }
+
+  // Hide respawn button when game resumes
+  if (gameOver === false) {
+    const respawnBtn = document.getElementById("respawnBtn");
+    if (respawnBtn && !respawnBtn.classList.contains("hidden")) {
+      respawnBtn.classList.add("hidden");
     }
   }
 
@@ -1590,18 +1604,17 @@ document.getElementById("recenterBtn").addEventListener("click", () => {
   }
 });
 
-// Force respawn button (debug)
-document.getElementById("forceRespawnBtn").addEventListener("click", () => {
-  console.log("🔄 Force respawn triggered");
-  window._hadMyPiece = false;
-  gameOver = false;
-  gameOverTime = undefined;
-  gameOverAlpha = 0;
-  // Re-send player info to trigger a fresh spawn on server
-  if (window.sendPlayerInfo) {
-    window.sendPlayerInfo();
-  }
-});
+// Respawn button — manual respawn on eliminated screen
+const respawnBtn = document.getElementById("respawnBtn");
+if (respawnBtn) {
+  respawnBtn.addEventListener("click", () => {
+    console.log("🔄 Respawn triggered");
+    // Request respawn from server by sending player info
+    if (window.sendPlayerInfo) {
+      window.sendPlayerInfo();
+    }
+  });
+}
 
 // Piece hover tooltip
 const pieceTooltip = document.getElementById("pieceTooltip");

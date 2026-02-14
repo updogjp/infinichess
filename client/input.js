@@ -77,6 +77,7 @@ window.onkeydown = window.onkeyup = (e) => {
           // focus chat
           chatOpen = true;
           chatDiv.classList.remove("hidden");
+          chatInput.classList.remove("hidden");
           if (chatBtn) chatBtn.classList.add("hidden");
           chatInput.setAttribute("tabindex", "0");
           chatInput.focus();
@@ -444,6 +445,7 @@ if (chatBtn) {
     e.stopPropagation();
     chatOpen = true;
     chatDiv.classList.remove("hidden");
+    chatInput.classList.remove("hidden");
     chatBtn.classList.add("hidden");
     chatInput.setAttribute("tabindex", "0");
     chatInput.focus();
@@ -456,6 +458,7 @@ if (isMobile) {
   chatInput.addEventListener("focus", () => {
     chatOpen = true;
     chatDiv.classList.remove("hidden");
+    chatInput.classList.remove("hidden");
     if (chatBtn) chatBtn.classList.add("hidden");
     chatInput.style.opacity = "1";
   });
