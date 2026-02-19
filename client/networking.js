@@ -5,6 +5,12 @@ const BASE_RECONNECT_DELAY = 1000; // 1s, doubles each attempt
 let connected = false;
 const msgs = [];
 
+// Session tracking for analytics
+window._sessionStartTime = null;
+window._peakPieceType = 6; // King = 6 (lowest), Queen = 1 (highest by evolution)
+const KILL_MILESTONES = [1, 5, 10, 25, 50, 100];
+const PIECE_EVOLUTION_ORDER = { 6: 0, 5: 1, 3: 2, 4: 3, 2: 4, 1: 5 }; // King→Knight→Bishop/Rook→Queen
+
 function connectWebSocket() {
   ws = new WebSocket(HOST);
   ws.binaryType = "arraybuffer";
@@ -195,6 +201,24 @@ ws.addEventListener("message", function (data) {
         // Evolution — show toast, don't recenter camera
         const pieceName = PIECE_NAMES[piece] || "piece";
         window.showToast(`EVOLVED → ${pieceName.toUpperCase()}`, "info", 3000);
+
+        // PostHog: track evolution
+        if (window.posthog && window.posthog.capture) {
+          const selfInfo = window.playerNamesMap && window.playerNamesMap[selfId];
+          const fromName = PIECE_NAMES[oldPiece.type] || String(oldPiece.type);
+          const toName = PIECE_NAMES[piece] || String(piece);
+          // Track peak piece (higher evolution rank = better)
+          if ((PIECE_EVOLUTION_ORDER[piece] || 0) > (PIECE_EVOLUTION_ORDER[window._peakPieceType] || 0)) {
+            window._peakPieceType = piece;
+          }
+          window.posthog.capture('piece_evolution', {
+            from_piece: fromName,
+            to_piece: toName,
+            from_piece_type: oldPiece.type,
+            to_piece_type: piece,
+            kills_at_evolution: selfInfo ? selfInfo.kills : null,
+          });
+        }
       }
 
       if (isSpawn) {
@@ -276,6 +300,22 @@ ws.addEventListener("message", function (data) {
       legalMoves = undefined;
       draggingSelected = false;
       moveWasDrag = false;
+
+      // PostHog: track death
+      if (window.posthog && window.posthog.capture) {
+        const selfInfo = window.playerNamesMap && window.playerNamesMap[selfId];
+        const killsAtDeath = selfInfo ? selfInfo.kills : 0;
+        const survivalMs = window._sessionStartTime ? (performance.now() - window._sessionStartTime) : null;
+        window.posthog.capture('game_death', {
+          killer_name: window.gameOverKiller,
+          killer_id: playerId,
+          killer_is_ai: playerId >= 10000,
+          kills_at_death: killsAtDeath,
+          piece_type_at_death: movingPiece.type,
+          peak_piece_type: window._peakPieceType,
+          survival_ms: survivalMs ? Math.round(survivalMs) : null,
+        });
+      }
     }
 
     // Track AI cooldowns for rendering cooldown bars
@@ -286,17 +326,15 @@ ws.addEventListener("message", function (data) {
       });
     }
 
-    // PostHog: track move event (only for self moves to reduce noise)
-    if (playerId === selfId && window.posthog && window.posthog.capture) {
-      window.posthog.capture('piece_moved', {
-        from_x: startX,
-        from_y: startY,
-        to_x: finX,
-        to_y: finY,
-        piece_type: movingPiece.type,
-        is_capture: isCapture,
+    // PostHog: track captures only (not every move — too noisy)
+    if (playerId === selfId && isCapture && window.posthog && window.posthog.capture) {
+      const selfInfo = window.playerNamesMap && window.playerNamesMap[selfId];
+      window.posthog.capture('capture_made', {
+        attacker_piece_type: movingPiece.type,
+        victim_piece_type: endPiece.type,
+        victim_is_ai: endPiece.team >= 10000,
+        kills_after: selfInfo ? selfInfo.kills : null,
       });
-      if (window.posthog.flush) window.posthog.flush();
     }
 
     // Clear selection if our piece moved (server confirmed)
@@ -475,13 +513,17 @@ ws.addEventListener("message", function (data) {
       const oldKills = window.playerNamesMap[id] ? window.playerNamesMap[id].kills : 0;
       window.playerNamesMap[id] = { name, kills, color };
       
-      // PostHog: track kill milestones for self
+      // PostHog: track kill milestones at meaningful thresholds only
       if (id === selfId && kills > oldKills && window.posthog && window.posthog.capture) {
-        window.posthog.capture('player_kill_milestone', {
-          total_kills: kills,
-          kills_this_update: kills - oldKills,
-        });
-        if (window.posthog.flush) window.posthog.flush();
+        for (const milestone of KILL_MILESTONES) {
+          if (oldKills < milestone && kills >= milestone) {
+            window.posthog.capture('kill_milestone', {
+              milestone,
+              total_kills: kills,
+            });
+            break;
+          }
+        }
       }
     }
 
@@ -537,7 +579,6 @@ ws.onopen = () => {
     console.log("✓ WebSocket connected");
     if (window.posthog && window.posthog.capture) {
       window.posthog.capture('ws_connected');
-      if (window.posthog.flush) window.posthog.flush();
     }
     window.send = (data) => {
       ws.send(data);
@@ -586,10 +627,6 @@ ws.onerror = (error) => {
         timestamp: new Date().toISOString(),
       });
     }
-    if (window.posthog && window.posthog.capture) {
-      window.posthog.capture('ws_error', { error: String(error) });
-      if (window.posthog.flush) window.posthog.flush();
-    }
   } catch (e) {
     console.error('❌ Error in WebSocket onerror handler:', e);
   }
@@ -604,10 +641,6 @@ ws.onclose = () => {
         reconnect_attempts: reconnectAttempts,
         max_attempts: MAX_RECONNECT_ATTEMPTS,
       });
-    }
-    if (window.posthog && window.posthog.capture) {
-      window.posthog.capture('ws_disconnected', { reconnect_attempts: reconnectAttempts });
-      if (window.posthog.flush) window.posthog.flush();
     }
     window.send = (data) => { msgs.push(data); };
 
@@ -638,6 +671,22 @@ ws.onclose = () => {
 
 // Initial connection
 connectWebSocket();
+
+// Flush PostHog on page unload and send session_end
+window.addEventListener('beforeunload', () => {
+  if (window.posthog && window.posthog.capture && window._sessionStartTime) {
+    const selfInfo = window.playerNamesMap && window.playerNamesMap[selfId];
+    window.posthog.capture('session_end', {
+      session_duration_ms: Math.round(performance.now() - window._sessionStartTime),
+      total_kills: selfInfo ? selfInfo.kills : 0,
+      peak_piece_type: window._peakPieceType,
+      spectate_only: !!window.spectateMode && selfId === -1,
+    });
+  }
+  if (window.posthog && window.posthog.flush) {
+    window.posthog.flush();
+  }
+});
 
 // Send camera position periodically for viewport syncing
 setInterval(() => {
@@ -761,8 +810,18 @@ function initPlayerSetup() {
     if (window.posthog) {
       if (window.posthog.identify) window.posthog.identify(window.playerName, { player_color: window.playerColor });
       if (window.posthog.capture) {
-        window.posthog.capture('game_start', { player_name: window.playerName, player_color: window.playerColor, is_mobile: /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) });
-        if (window.posthog.flush) window.posthog.flush();
+        const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+        const connType = navigator.connection ? navigator.connection.effectiveType : null;
+        window._sessionStartTime = performance.now();
+        window._peakPieceType = 6;
+        window.posthog.capture('game_start', {
+          player_name: window.playerName,
+          player_color: window.playerColor,
+          is_mobile: isMobile,
+          screen_w: window.innerWidth,
+          screen_h: window.innerHeight,
+          connection_type: connType,
+        });
       }
     }
 
@@ -791,6 +850,15 @@ function initPlayerSetup() {
       window.spectateMode = true;
       playerSetupCompleted = true;
       document.getElementById("playerSetupDiv").classList.add("hidden");
+
+      // PostHog: track spectate
+      if (window.posthog && window.posthog.capture) {
+        window.posthog.capture('spectate_start', {
+          is_mobile: /Android|iPhone|iPad|iPod/i.test(navigator.userAgent),
+          screen_w: window.innerWidth,
+          screen_h: window.innerHeight,
+        });
+      }
 
       // Show in-game UI
       const chatContainer = document.querySelector(".chatContainer");

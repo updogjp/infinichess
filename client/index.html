@@ -355,20 +355,10 @@
         autocapture: false,
         capture_pageview: true,
         capture_pageleave: true,
-        batch_size: 1,
-        batch_timeout: 1000,
-        debug: true,
         session_recording: {
           maskAllInputs: true,
           maskAllText: true,
         },
-      });
-      // Debug: log PostHog initialization
-      console.log('🔍 PostHog initialized:', {
-        hasPostHog: !!window.posthog,
-        hasCapture: !!(window.posthog && window.posthog.capture),
-        apiKey: 'phc_REDACTED',
-        apiHost: 'https://us.i.posthog.com',
       });
     </script>
     <script src="/client/errorTracking.js"></script>

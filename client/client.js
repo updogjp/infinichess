@@ -125,39 +125,7 @@ window.showToast = (message, type = "info", duration = 4000) => {
   }, duration);
 };
 
-// PostHog capture wrapper for debugging
-const originalCapture = window.posthog?.capture;
-if (window.posthog && originalCapture) {
-  window.posthog.capture = function(eventName, properties) {
-    console.log('📊 PostHog capture:', eventName, properties);
-    return originalCapture.call(this, eventName, properties);
-  };
-}
 
-// Test PostHog connectivity on page load
-window.addEventListener('load', () => {
-  setTimeout(() => {
-    if (window.posthog && window.posthog.capture) {
-      console.log('✅ PostHog ready, sending test event...');
-      window.posthog.capture('page_load_test', { timestamp: new Date().toISOString() });
-      // Force flush to ensure test event is sent
-      if (window.posthog.flush) {
-        window.posthog.flush();
-        console.log('✅ PostHog flushed');
-      }
-    } else {
-      console.warn('⚠️ PostHog not ready after page load');
-    }
-  }, 1000);
-});
-
-// Helper to flush PostHog events on demand
-window.flushPostHog = () => {
-  if (window.posthog && window.posthog.flush) {
-    console.log('🔄 Flushing PostHog events...');
-    window.posthog.flush();
-  }
-};
 
 // Global error boundary — logs full details to console AND sends to PostHog
 window.onerror = (msg, src, line, col, error) => {
