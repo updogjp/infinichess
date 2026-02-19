@@ -111,7 +111,7 @@ body {
   font-size: 42px;
   font-weight: 700;
   letter-spacing: 10px;
-  margin: 0;
+  margin: 0 0 0 10px; /* compensate letter-spacing on last char */
   color: var(--text-primary);
   animation: splashTitleIn 0.8s ease-out 0.2s both;
 }
@@ -121,7 +121,7 @@ body {
   font-size: 11px;
   letter-spacing: 5px;
   color: var(--text-secondary);
-  margin: 12px 0 0;
+  margin: 12px 0 0 5px; /* compensate letter-spacing on last char */
   text-transform: uppercase;
   animation: splashTitleIn 0.8s ease-out 0.4s both;
 }
@@ -234,6 +234,7 @@ body {
 /* Play Button (inside splash screen) */
 .play-button {
   margin-top: 40px;
+  margin-left: 4px; /* compensate letter-spacing on last char */
   font-family: "Sometype Mono", monospace;
   font-size: 14px;
   font-weight: 700;
@@ -266,10 +267,12 @@ body {
   .splash-title {
     font-size: 28px;
     letter-spacing: 6px;
+    margin-left: 6px;
   }
   .splash-subtitle {
     font-size: 9px;
     letter-spacing: 3px;
+    margin-left: 3px;
   }
   .splash-links {
     gap: 10px;
