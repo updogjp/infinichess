@@ -243,6 +243,22 @@ globalThis.getCurrentThresholdKills = (kills) => {
     return prev;
 };
 
+// Get kill count to respawn at after dying — one evolution rank lower than current.
+// Returns the kill threshold for the tier below the player's current tier.
+// If already at the lowest tier (King), returns 0.
+globalThis.getRespawnKills = (kills) => {
+    const k = kills || 0;
+    // Find which tier index the player is currently at
+    let tierIndex = 0;
+    for (let i = 0; i < EVOLUTION_THRESHOLDS.length; i++) {
+        if (k >= EVOLUTION_THRESHOLDS[i].kills) tierIndex = i;
+        else break;
+    }
+    // One rank lower — if already King (tier 0), stay at 0
+    if (tierIndex === 0) return 0;
+    return EVOLUTION_THRESHOLDS[tierIndex - 1].kills;
+};
+
 // Move range scales with captures: base 3 + 1 per kill, capped at 22
 const MOVE_RANGE_BASE = 3;
 const MOVE_RANGE_PER_KILL = 1;

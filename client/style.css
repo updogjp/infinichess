@@ -1497,9 +1497,9 @@ body {
 /* Respawn button — centered on eliminated screen */
 .respawn-btn {
   position: fixed;
-  top: 50%;
+  top: calc(50% + 130px);
   left: 50%;
-  transform: translate(-50%, -50%);
+  transform: translateX(-50%);
   z-index: 102;
   background: rgba(10, 10, 10, 0.9);
   border: 1px solid var(--border);
@@ -1518,11 +1518,11 @@ body {
   background: rgba(30, 30, 30, 0.95);
   color: var(--text-primary);
   border-color: var(--text-secondary);
-  transform: translate(-50%, -50%) translateY(-2px);
+  transform: translateX(-50%) translateY(-2px);
 }
 
 .respawn-btn:active {
-  transform: translate(-50%, -50%) translateY(0px);
+  transform: translateX(-50%) translateY(0px);
 }
 
 .respawn-btn.hidden {

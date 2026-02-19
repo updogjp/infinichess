@@ -355,7 +355,12 @@ function move(startX, startY, finX, finY, playerId) {
       clients[victimId].dead = true;
       clients[victimId].respawnTime = Date.now() + global.respawnTime;
       teamsToNeutralize.push(victimId);
-      leaderboard.set(victimId, 0);
+
+      // Respawn one rank lower instead of full reset.
+      // Compute and store the kill count for the tier below the victim's current tier.
+      const victimKills = leaderboard.get(victimId) || 0;
+      clients[victimId].respawnKills = globalThis.getRespawnKills(victimKills);
+      leaderboard.set(victimId, 0); // leaderboard shows 0 while dead
       cleanupPawnBots(victimId);
     }
 
@@ -1549,17 +1554,46 @@ global.app = uWS
 
         console.log(`[Respawn] Player ${ws.id} (${meta.name}) respawning...`);
 
-        const pieceType = globalThis.PIECE_KING;
+        // Respawn one rank lower: use kill count saved at time of death
+        const respawnKills = ws.respawnKills !== undefined ? ws.respawnKills : 0;
+        const pieceType = globalThis.getEvolutionPiece(respawnKills, ws.id);
         const spawn = findSpawnLocation(pieceType);
 
         ws.dead = false;
+        ws.respawnKills = undefined; // clear stored value
         ws.camera.x = spawn.x;
         ws.camera.y = spawn.y;
 
-        // Reset kills so evolution restarts from King
-        leaderboard.set(ws.id, 0);
+        // Restore leaderboard to the respawn kill count so evolution and XP bar are correct
+        leaderboard.set(ws.id, respawnKills);
+        leaderboardDirty = true; // Broadcast updated kill count to all clients
 
-        setSquare(spawn.x, spawn.y, pieceType, ws.id);
+        // Write to spatial hash and broadcast to OTHER clients.
+        // Do NOT use setSquare() here — it would send a setSquare message to the
+        // respawning player before sendViewportState runs, meaning selfId is still
+        // -1 on the client, so isSpawn never triggers and the camera never snaps.
+        // The explicit spawnBuf below (sent after sendViewportState) handles the
+        // respawning player's own piece notification correctly.
+        spatialHash.set(spawn.x, spawn.y, pieceType, ws.id);
+        {
+          const respawnBroadcastBuf = new Int32Array(5);
+          respawnBroadcastBuf[0] = 55555;
+          respawnBroadcastBuf[1] = spawn.x;
+          respawnBroadcastBuf[2] = spawn.y;
+          respawnBroadcastBuf[3] = pieceType;
+          respawnBroadcastBuf[4] = ws.id;
+          const VIEWPORT_RADIUS = 50;
+          for (const client of Object.values(clients)) {
+            if (client === ws) continue; // skip the respawning player
+            if (!client.camera || !client.verified) continue;
+            const dx = spawn.x - client.camera.x;
+            const dy = spawn.y - client.camera.y;
+            const effectiveRadius = VIEWPORT_RADIUS / (client.camera.scale || 1);
+            if (dx * dx + dy * dy < effectiveRadius * effectiveRadius) {
+              send(client, respawnBroadcastBuf);
+            }
+          }
+        }
 
         spawnImmunity.set(ws.id, Date.now() + SPAWN_IMMUNITY_MS);
         const immuneBuf = new Uint16Array(3);
@@ -1580,7 +1614,7 @@ global.app = uWS
         for (let t = 0; t < 32; t++) tokenBuf[2 + t] = tokenBytes[t];
         send(ws, tokenBuf);
 
-        console.log(`[Respawn] ✓ Player ${ws.id} (${meta.name}) at ${toChessNotation(spawn.x, spawn.y)}`);
+        console.log(`[Respawn] ✓ Player ${ws.id} (${meta.name}) as ${PIECE_NAMES[pieceType]} (${respawnKills} kills) at ${toChessNotation(spawn.x, spawn.y)}`);
         // 1) Send viewport FIRST — updates selfId on client
         sendViewportState(ws, spawn.x, spawn.y);
         // 2) THEN send direct setSquare for own piece — triggers isSpawn detection on client

@@ -97,11 +97,11 @@ document.addEventListener('touchmove', (e) => {
 }, { passive: false });
 
 let mouse;
-let selectedSquareX, selectedSquareY;
-let legalMoves = undefined,
+var selectedSquareX, selectedSquareY;
+var legalMoves = undefined,
   draggingSelected = false,
   moveWasDrag = false;
-let cooldownEndTime = 0;
+var cooldownEndTime = 0;
 let invalidClickEffect = null; // { x, y, time } for brief red flash on invalid clicks
 
 // Debug threat visualization
@@ -332,7 +332,7 @@ window.onmousedown = (e) => {
   }
 };
 
-let unconfirmedSX, unconfirmedSY;
+var unconfirmedSX, unconfirmedSY;
 window.onmouseup = (e) => {
   // End camera panning
   if (isPanning) {
@@ -383,6 +383,7 @@ window.onmouseup = (e) => {
 
 const colors = ["#4F4096", "#3A2E6F"]; // Purple theme
 const squareSize = 150;
+window.squareSize = squareSize; // Export for networking.js
 
 // Camera starts at origin — mobile gets a wider default view
 const defaultScale = (window.innerWidth < 768) ? 0.55 : 1;
@@ -454,10 +455,11 @@ let time = performance.now();
 let lastTime = time;
 let dt = 0;
 let mousePos;
-let gameOver = false,
+var gameOver = false,
   interpSquare = undefined,
   gameOverAlpha = 0,
   gameOverTime;
+var gameOverKillsAtDeath = 0; // kills at time of death, used to show respawn piece type
 
 // Capture visual effects
 const captureEffects = new Map(); // "x,y" -> { startTime, color, pieceType }
@@ -900,7 +902,7 @@ function render() {
     }
   }
 
-  // Draw spawn immunity indicator (squircle with pulsing glow)
+  // Draw spawn immunity indicator — pulsing border + depleting arc on the piece tile
   if (window.spawnImmunities && window.spawnImmunities.size > 0) {
     try {
       const now = performance.now();
@@ -912,7 +914,7 @@ function render() {
           continue;
         }
 
-        // Find the immune piece in visible pieces
+        // Find the immune piece in the visible set
         let immunePiece = null;
         for (const p of visiblePieces) {
           if (p.team === immuneTeam && p.type !== 0) {
@@ -923,45 +925,64 @@ function render() {
         if (!immunePiece) continue;
 
         const remaining = expiryTime - now;
-        const progress = 1 - remaining / SPAWN_IMMUNITY_MS;
-        const pulse = 0.4 + Math.sin(now / 200) * 0.2;
-        // Fade out in last 40% of duration
-        const fadeAlpha = progress > 0.6 ? (1 - progress) / 0.4 : 1;
+        const totalMs = SPAWN_IMMUNITY_MS;
+        const frac = remaining / totalMs;           // 1 → 0 as time runs out
 
-        const x = immunePiece.x * squareSize;
-        const y = immunePiece.y * squareSize;
-        const size = squareSize;
-        const cornerRadius = size * 0.25;
+        // Pulse speed ramps up in the last 20% of duration
+        const pulseSpeed = frac < 0.2 ? 120 : 300;
+        const pulse = 0.55 + Math.sin(now / pulseSpeed) * 0.45; // 0.1 – 1.0
+
+        // Fade out only in the final 15%
+        const fadeAlpha = frac < 0.15 ? frac / 0.15 : 1;
+
+        const isSelf = immuneTeam === selfId;
+        // Own piece: bright cyan. Others: soft gold.
+        const [cr, cg, cb] = isSelf ? [80, 210, 255] : [255, 210, 60];
+
+        const px = immunePiece.x * squareSize;
+        const py = immunePiece.y * squareSize;
+        const sz = squareSize;
+        const cx2 = px + sz / 2;
+        const cy2 = py + sz / 2;
+        const r   = sz * 0.52; // radius for the arc, just outside the tile
 
         ctx.save();
-        ctx.globalAlpha = fadeAlpha * pulse;
 
-        // Squircle outline
-        const glowColor = immuneTeam === selfId ? "100, 200, 255" : "200, 200, 100";
-        ctx.strokeStyle = `rgba(${glowColor}, ${0.6 * fadeAlpha * pulse})`;
-        ctx.lineWidth = 2;
+        // ── 1. Tile tint fill ──────────────────────────────────────────────────
+        ctx.globalAlpha = fadeAlpha * pulse * (isSelf ? 0.18 : 0.10);
+        ctx.fillStyle = `rgb(${cr},${cg},${cb})`;
+        ctx.fillRect(px, py, sz, sz);
+
+        // ── 2. Pulsing border (rounded rect) ──────────────────────────────────
+        const borderAlpha = fadeAlpha * (0.5 + pulse * 0.5);
+        ctx.globalAlpha = borderAlpha;
+        ctx.strokeStyle = `rgba(${cr},${cg},${cb},1)`;
+        ctx.lineWidth = isSelf ? 3.5 : 2.5;
+        ctx.shadowColor = `rgba(${cr},${cg},${cb},0.7)`;
+        ctx.shadowBlur  = isSelf ? 12 : 7;
+        const cr2 = sz * 0.18;
         ctx.beginPath();
-        ctx.moveTo(x + cornerRadius, y);
-        ctx.lineTo(x + size - cornerRadius, y);
-        ctx.quadraticCurveTo(x + size, y, x + size, y + cornerRadius);
-        ctx.lineTo(x + size, y + size - cornerRadius);
-        ctx.quadraticCurveTo(x + size, y + size, x + size - cornerRadius, y + size);
-        ctx.lineTo(x + cornerRadius, y + size);
-        ctx.quadraticCurveTo(x, y + size, x, y + size - cornerRadius);
-        ctx.lineTo(x, y + cornerRadius);
-        ctx.quadraticCurveTo(x, y, x + cornerRadius, y);
-        ctx.closePath();
+        ctx.roundRect(px + 1.5, py + 1.5, sz - 3, sz - 3, cr2);
         ctx.stroke();
+        ctx.shadowBlur = 0;
 
-        // Inner glow
-        const glowGrad = ctx.createRadialGradient(
-          x + size / 2, y + size / 2, size * 0.2,
-          x + size / 2, y + size / 2, size * 0.6
-        );
-        glowGrad.addColorStop(0, `rgba(${glowColor}, ${0.15 * fadeAlpha * pulse})`);
-        glowGrad.addColorStop(1, `rgba(${glowColor}, 0)`);
-        ctx.fillStyle = glowGrad;
-        ctx.fillRect(x, y, size, size);
+        // ── 3. Depleting arc (only for own piece) ─────────────────────────────
+        if (isSelf) {
+          // Arc sweeps from 12-o'clock clockwise, shrinking as time runs out
+          const startAngle = -Math.PI / 2;
+          const endAngle   = startAngle + Math.PI * 2 * frac;
+          ctx.globalAlpha = fadeAlpha * 0.85;
+          ctx.strokeStyle = `rgba(${cr},${cg},${cb},1)`;
+          ctx.lineWidth = 3;
+          ctx.lineCap = "round";
+          ctx.shadowColor = `rgba(${cr},${cg},${cb},0.9)`;
+          ctx.shadowBlur  = 8;
+          ctx.beginPath();
+          ctx.arc(cx2, cy2, r, startAngle, endAngle, false);
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+          ctx.lineCap = "butt";
+        }
 
         ctx.restore();
         changed = true;
@@ -1316,84 +1337,125 @@ function render() {
       gameOverAlpha = interpolate(gameOverAlpha, 1, (dt / 16.66) * 0.08);
       changed = true;
 
-      // Show respawn button
-      const respawnBtn = document.getElementById("respawnBtn");
-      if (respawnBtn && respawnBtn.classList.contains("hidden")) {
-        respawnBtn.classList.remove("hidden");
-      }
-
-      // Auto-respawn when countdown expires (fire once)
+      // Show respawn button only once the countdown is done
       const respawnReady = time >= gameOverTime + respawnTime;
-      if (respawnReady && !window._autoRespawnFired) {
-        window._autoRespawnFired = true;
-        if (window.sendPlayerInfo) window.sendPlayerInfo();
+      const respawnBtn = document.getElementById("respawnBtn");
+      if (respawnBtn) {
+        if (respawnReady) {
+          respawnBtn.classList.remove("hidden");
+          respawnBtn.disabled = false;
+        } else {
+          respawnBtn.classList.add("hidden");
+        }
       }
-      // Keep button disabled until timer expires
-      if (respawnBtn) respawnBtn.disabled = !respawnReady;
 
       // Dark overlay
-      ctx.fillStyle = `rgba(0, 0, 0, ${gameOverAlpha * 0.65})`;
+      ctx.fillStyle = `rgba(0, 0, 0, ${gameOverAlpha * 0.7})`;
       ctx.fillRect(0, 0, canvas.w, canvas.h);
 
       // Red vignette
       const vigGrad = ctx.createRadialGradient(
-        canvas.w / 2, canvas.h / 2, canvas.w * 0.2,
-        canvas.w / 2, canvas.h / 2, canvas.w * 0.7,
+        canvas.w / 2, canvas.h / 2, canvas.w * 0.15,
+        canvas.w / 2, canvas.h / 2, canvas.w * 0.75,
       );
-      vigGrad.addColorStop(0, "rgba(180, 0, 0, 0)");
-      vigGrad.addColorStop(1, `rgba(120, 0, 0, ${gameOverAlpha * 0.3})`);
+      vigGrad.addColorStop(0, "rgba(160, 0, 0, 0)");
+      vigGrad.addColorStop(1, `rgba(120, 0, 0, ${gameOverAlpha * 0.45})`);
       ctx.fillStyle = vigGrad;
       ctx.fillRect(0, 0, canvas.w, canvas.h);
 
       const centerX = canvas.w / 2;
       const centerY = canvas.h / 2;
-      const bob = Math.sin(time / 400) * 4;
+      const bob = Math.sin(time / 500) * 3;
 
-      // "ELIMINATED" title
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.globalAlpha = gameOverAlpha;
 
-      ctx.font = "700 52px 'Sometype Mono', monospace";
+      // Layout: evenly spaced rows around center
+      // Row offsets relative to centerY + bob
+      const R_TITLE    = -68;
+      const R_KILLER   = -22;
+      const R_KILLS    = +10;
+      const R_RESPAWN  = +38;
+      const R_BAR      = +64;
+      const R_TIMER    = +92;
+
+      // ── ELIMINATED ──
+      ctx.font = "700 48px 'Sometype Mono', monospace";
       ctx.fillStyle = "#ff4444";
-      ctx.strokeStyle = "rgba(0, 0, 0, 0.8)";
-      ctx.lineWidth = 6;
-      ctx.strokeText("ELIMINATED", centerX, centerY + bob - 50);
-      ctx.fillText("ELIMINATED", centerX, centerY + bob - 50);
+      ctx.strokeStyle = "rgba(0,0,0,0.85)";
+      ctx.lineWidth = 7;
+      ctx.strokeText("ELIMINATED", centerX, centerY + bob + R_TITLE);
+      ctx.fillText("ELIMINATED", centerX, centerY + bob + R_TITLE);
 
-      // Killer info
+      // ── killed by ──
       const killer = window.gameOverKiller || "Unknown";
-      ctx.font = "500 20px 'Sometype Mono', monospace";
-      ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
+      ctx.font = "500 18px 'Sometype Mono', monospace";
+      ctx.fillStyle = "rgba(255,255,255,0.65)";
+      ctx.strokeStyle = "rgba(0,0,0,0.7)";
       ctx.lineWidth = 3;
-      ctx.strokeText(`killed by ${killer}`, centerX, centerY + bob - 15);
-      ctx.fillText(`killed by ${killer}`, centerX, centerY + bob - 15);
+      ctx.strokeText(`killed by ${killer}`, centerX, centerY + bob + R_KILLER);
+      ctx.fillText(`killed by ${killer}`, centerX, centerY + bob + R_KILLER);
 
-      // Respawn countdown
+      // ── kills this life ──
+      ctx.font = "500 14px 'Sometype Mono', monospace";
+      ctx.fillStyle = "rgba(255,255,255,0.45)";
+      ctx.lineWidth = 2;
+      const killWord = gameOverKillsAtDeath === 1 ? "kill" : "kills";
+      ctx.strokeText(`${gameOverKillsAtDeath} ${killWord} this life`, centerX, centerY + bob + R_KILLS);
+      ctx.fillText(`${gameOverKillsAtDeath} ${killWord} this life`, centerX, centerY + bob + R_KILLS);
+
+      // ── respawn piece ──
+      const respawnKills = (typeof getRespawnKills !== 'undefined') ? getRespawnKills(gameOverKillsAtDeath) : 0;
+      const respawnPieceType = (typeof getEvolutionPiece !== 'undefined') ? getEvolutionPiece(respawnKills, selfId) : 6;
+      const respawnPieceName = (PIECE_NAMES && PIECE_NAMES[respawnPieceType]) || 'King';
+      const demoted = respawnKills < gameOverKillsAtDeath;
+      ctx.font = "600 14px 'Sometype Mono', monospace";
+      ctx.fillStyle = demoted ? "rgba(255,185,60,0.9)" : "rgba(160,220,160,0.8)";
+      ctx.strokeStyle = "rgba(0,0,0,0.6)";
+      ctx.lineWidth = 2;
+      const respawnLabel = demoted
+        ? `↓ respawn as ${respawnPieceName}  (−${gameOverKillsAtDeath - respawnKills} kills)`
+        : `respawn as ${respawnPieceName}`;
+      ctx.strokeText(respawnLabel, centerX, centerY + bob + R_RESPAWN);
+      ctx.fillText(respawnLabel, centerX, centerY + bob + R_RESPAWN);
+
+      // ── countdown bar ──
       const remaining = Math.max(0, gameOverTime + respawnTime - time);
       const progress = 1 - remaining / respawnTime;
       const seconds = (remaining / 1000).toFixed(1);
 
-      // Countdown bar background
-      const barW = 260;
-      const barH = 8;
+      const barW = 240;
+      const barH = 6;
       const barX = centerX - barW / 2;
-      const barY = centerY + bob + 25;
+      const barY = centerY + bob + R_BAR;
 
-      ctx.fillStyle = "rgba(255, 255, 255, 0.1)";
-      ctx.fillRect(barX, barY, barW, barH);
+      // Track background
+      ctx.fillStyle = "rgba(255,255,255,0.08)";
+      ctx.beginPath();
+      ctx.roundRect(barX, barY, barW, barH, barH / 2);
+      ctx.fill();
 
-      // Countdown bar fill
-      ctx.fillStyle = `rgba(255, 68, 68, ${0.5 + progress * 0.5})`;
-      ctx.fillRect(barX, barY, barW * progress, barH);
+      // Filled portion — colour shifts red→amber→green as it fills
+      const barR = Math.round(255 * (1 - progress * 0.5));
+      const barG = Math.round(80  + progress * 160);
+      ctx.fillStyle = `rgba(${barR},${barG},60,0.85)`;
+      if (progress > 0) {
+        ctx.beginPath();
+        ctx.roundRect(barX, barY, barW * progress, barH, barH / 2);
+        ctx.fill();
+      }
 
-      // Respawn text
-      ctx.font = "500 16px 'Sometype Mono', monospace";
-      ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
-      ctx.strokeStyle = "rgba(0, 0, 0, 0.6)";
+      // ── timer text ──
+      ctx.font = "500 13px 'Sometype Mono', monospace";
+      ctx.fillStyle = progress >= 1
+        ? "rgba(160,220,160,0.85)"
+        : "rgba(255,255,255,0.4)";
+      ctx.strokeStyle = "rgba(0,0,0,0.5)";
       ctx.lineWidth = 2;
-      ctx.strokeText(`respawning in ${seconds}s`, centerX, centerY + bob + 52);
-      ctx.fillText(`respawning in ${seconds}s`, centerX, centerY + bob + 52);
+      const timerLabel = progress >= 1 ? "ready — press Respawn" : `respawning in ${seconds}s`;
+      ctx.strokeText(timerLabel, centerX, centerY + bob + R_TIMER);
+      ctx.fillText(timerLabel, centerX, centerY + bob + R_TIMER);
 
       ctx.globalAlpha = 1;
     } catch (e) {

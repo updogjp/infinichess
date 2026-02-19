@@ -195,7 +195,11 @@ ws.addEventListener("message", function (data) {
     // Our piece: detect spawn vs evolution
     if (piece !== 0 && team === selfId) {
       const isEvolution = oldPiece.team === selfId && oldPiece.type !== 0 && oldPiece.type !== piece;
-      const isSpawn = oldPiece.type === 0 || oldPiece.team !== selfId;
+      // isSpawn: tile was empty, piece belonged to someone else, or we were dead (gameOver).
+      // The gameOver check is necessary because on respawn the viewport sync runs first,
+      // which adds our piece to the hash — so by the time this setSquare arrives oldPiece
+      // already has team===selfId, which would otherwise cause isSpawn to evaluate false.
+      const isSpawn = oldPiece.type === 0 || oldPiece.team !== selfId || gameOver === true;
 
       if (isEvolution) {
         // Evolution — show toast, don't recenter camera
@@ -292,10 +296,12 @@ ws.addEventListener("message", function (data) {
       gameOver = true;
       gameOverTime = performance.now();
       gameOverAlpha = 0;
-      window._autoRespawnFired = false;
       // Determine killer name
       const killerData = window.playerNamesMap && window.playerNamesMap[playerId];
       window.gameOverKiller = killerData ? killerData.name : (playerId >= 10000 ? "AI" : "Player #" + playerId);
+      // Store kills at death so the death screen can show respawn piece type
+      const selfInfo = window.playerNamesMap && window.playerNamesMap[selfId];
+      gameOverKillsAtDeath = selfInfo ? (selfInfo.kills || 0) : 0;
       selectedSquareX = selectedSquareY = undefined;
       legalMoves = undefined;
       draggingSelected = false;
@@ -362,12 +368,11 @@ ws.addEventListener("message", function (data) {
     window.spawnImmunities = window.spawnImmunities || new Map();
     window.spawnImmunities.set(immunePlayerId, performance.now() + durationMs);
 
-    // If it's us, reset game over state
-    if (immunePlayerId === selfId) {
-      gameOver = false;
-      gameOverAlpha = 0;
-      window.gameOverKiller = null;
-    }
+    // NOTE: do NOT reset gameOver here — the 55556 immunity broadcast arrives BEFORE
+    // the 55555 setSquare message that triggers isSpawn detection. If we cleared gameOver
+    // here, the isSpawn check (gameOver === true) in the 55555 handler would fail and
+    // the camera would never snap to the new piece. gameOver is reset inside the isSpawn
+    // block of the 55555 handler, which is the correct place.
 
     changed = true;
     return;

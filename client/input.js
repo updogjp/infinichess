@@ -1,4 +1,4 @@
-let changed = true;
+var changed = true;
 const Controls = {
   KeyW: "up",
   KeyS: "down",
