@@ -268,6 +268,7 @@ ws.addEventListener("message", function (data) {
       gameOver = true;
       gameOverTime = performance.now();
       gameOverAlpha = 0;
+      window._autoRespawnFired = false;
       // Determine killer name
       const killerData = window.playerNamesMap && window.playerNamesMap[playerId];
       window.gameOverKiller = killerData ? killerData.name : (playerId >= 10000 ? "AI" : "Player #" + playerId);

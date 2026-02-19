@@ -116,6 +116,7 @@ setInterval(() => {
       teamsToNeutralize.push(session.id);
       leaderboard.delete(session.id);
       playerMetadata.delete(session.id);
+      cleanupPawnBots(session.id);
       sessions.delete(token);
       console.log(`[Session] Expired: ${session.name} (#${session.id})`);
     }
@@ -352,9 +353,10 @@ function move(startX, startY, finX, finY, playerId) {
       console.log(`[Kill] ${playerLabel} eliminated ${victimLabel} at ${toChessNotation(finX, finY)}`);
 
       clients[victimId].dead = true;
-      clients[victimId].respawnTime = Date.now() + global.respawnTime - 500;
+      clients[victimId].respawnTime = Date.now() + global.respawnTime;
       teamsToNeutralize.push(victimId);
       leaderboard.set(victimId, 0);
+      cleanupPawnBots(victimId);
     }
 
     // Increment kills for any non-neutral capture (AI or player victim)
@@ -585,6 +587,18 @@ function decodeText(u8array, startPos = 0, endPos = Infinity) {
 // AI player system - spawns intelligent pieces near online players
 const aiPieces = new Map(); // aiPieceId -> {x, y, type, lastMove}
 let nextAiId = AI_ID_MIN;
+
+// Pawn bot system — 2 pawn escorts spawned near each live player
+// pawnBots: Map of pawnBotId -> { x, y, ownerId, lastMove }
+// playerPawnBots: Map of playerId -> Set<pawnBotId>
+const pawnBots = new Map();
+const playerPawnBots = new Map(); // playerId -> Set of pawnBotId
+const PAWN_BOT_ID_MIN = 60000; // Above regular AI range
+const PAWN_BOT_ID_MAX = 65000;
+let nextPawnBotId = PAWN_BOT_ID_MIN;
+const PAWN_BOTS_PER_PLAYER = 2;
+const PAWN_BOT_SPAWN_RADIUS = 5; // Spawn within 5 squares of player
+const PAWN_BOT_MOVE_INTERVAL = 1200; // Move every 1.2s
 
 // Calculate target AI count based on player count (inversely scaled)
 function getTargetAICount(playerCount) {
@@ -896,10 +910,183 @@ function moveAIPieces() {
   }
 }
 
+// Spawn pawn bots near a specific player (called after player spawns / on interval)
+function spawnPawnBotsForPlayer(playerId) {
+  const meta = playerMetadata.get(playerId);
+  if (!meta || (meta.kingX === 0 && meta.kingY === 0)) return;
+
+  const existing = playerPawnBots.get(playerId);
+  const currentCount = existing ? existing.size : 0;
+  const needed = PAWN_BOTS_PER_PLAYER - currentCount;
+  if (needed <= 0) return;
+
+  const cx = meta.kingX;
+  const cy = meta.kingY;
+
+  for (let i = 0; i < needed; i++) {
+    let placed = false;
+    for (let tries = 0; tries < 40; tries++) {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = Math.floor(Math.random() * PAWN_BOT_SPAWN_RADIUS) + 2;
+      const x = Math.round(cx + Math.cos(angle) * dist);
+      const y = Math.round(cy + Math.sin(angle) * dist);
+
+      if (spatialHash.has(x, y)) continue;
+
+      // Pick a direction: +1 (down) or -1 (up) — pick whichever gives a legal move
+      // Try both; prefer the one that gives a forward empty square
+      let dir = null;
+      for (const d of [-1, 1]) {
+        const fwd = spatialHash.get(x, y + d);
+        if (fwd.type === 0) { dir = d; break; }
+      }
+      if (dir === null) continue; // No valid forward square, skip
+
+      if (nextPawnBotId >= PAWN_BOT_ID_MAX) nextPawnBotId = PAWN_BOT_ID_MIN;
+      const botId = nextPawnBotId++;
+
+      // Make sure this ID isn't already in use
+      if (pawnBots.has(botId)) continue;
+
+      setSquare(x, y, globalThis.PIECE_PAWN, botId);
+
+      const botColor = teamToColor(botId);
+      playerMetadata.set(botId, {
+        name: `Pawn_${botId}`,
+        color: botColor,
+        kingX: x,
+        kingY: y,
+      });
+
+      pawnBots.set(botId, { x, y, ownerId: playerId, dir, lastMove: Date.now() });
+
+      if (!playerPawnBots.has(playerId)) playerPawnBots.set(playerId, new Set());
+      playerPawnBots.get(playerId).add(botId);
+
+      placed = true;
+      break;
+    }
+    // If we couldn't place after 40 tries, just skip for this cycle
+    if (!placed) break;
+  }
+}
+
+// Remove all pawn bots belonging to a player
+function cleanupPawnBots(playerId) {
+  const bots = playerPawnBots.get(playerId);
+  if (!bots) return;
+  for (const botId of bots) {
+    const bot = pawnBots.get(botId);
+    if (bot) {
+      setSquare(bot.x, bot.y, 0, 0);
+      pawnBots.delete(botId);
+      playerMetadata.delete(botId);
+    }
+  }
+  playerPawnBots.delete(playerId);
+}
+
+// Move all pawn bots one step
+function movePawnBots() {
+  const now = Date.now();
+  const toDelete = [];
+
+  for (const [botId, bot] of pawnBots) {
+    // Verify piece still belongs to this bot
+    const currentPiece = spatialHash.get(bot.x, bot.y);
+    if (currentPiece.team !== botId) {
+      // Pawn was captured — clean up
+      toDelete.push(botId);
+      continue;
+    }
+
+    if (now - bot.lastMove < PAWN_BOT_MOVE_INTERVAL) continue;
+
+    const dy = bot.dir; // +1 or -1
+    const ny = bot.y + dy;
+
+    // Collect candidate moves: forward + diagonal captures
+    const candidates = [];
+
+    const fwd = spatialHash.get(bot.x, ny);
+    if (fwd.type === 0) candidates.push([bot.x, ny, false]);
+
+    // Diagonal captures (enemy pieces only)
+    for (const dx of [-1, 1]) {
+      const diag = spatialHash.get(bot.x + dx, ny);
+      if (diag.type !== 0 && diag.team !== botId) {
+        // Skip immune players
+        if (diag.team > 0 && diag.team < PAWN_BOT_ID_MIN) {
+          const immuneUntil = spawnImmunity.get(diag.team);
+          if (immuneUntil && now < immuneUntil) continue;
+        }
+        // Don't capture the owning player
+        if (diag.team === bot.ownerId) continue;
+        candidates.push([bot.x + dx, ny, true]);
+      }
+    }
+
+    if (candidates.length === 0) {
+      // Stuck — try flipping direction
+      bot.dir = -bot.dir;
+      bot.lastMove = now;
+      continue;
+    }
+
+    // Prefer captures; otherwise pick randomly among forward moves
+    const captures = candidates.filter(c => c[2]);
+    const [newX, newY] = captures.length > 0
+      ? captures[Math.floor(Math.random() * captures.length)]
+      : candidates[Math.floor(Math.random() * candidates.length)];
+
+    // If capturing another pawn bot, remove it from tracking
+    const targetPiece = spatialHash.get(newX, newY);
+    if (targetPiece.team >= PAWN_BOT_ID_MIN && targetPiece.team < PAWN_BOT_ID_MAX) {
+      pawnBots.delete(targetPiece.team);
+      playerMetadata.delete(targetPiece.team);
+      // Remove from owner's set
+      const ownerBots = playerPawnBots.get(targetPiece.team);
+      if (ownerBots) {
+        for (const [pid, bset] of playerPawnBots) {
+          if (bset.has(targetPiece.team)) { bset.delete(targetPiece.team); break; }
+        }
+      }
+    }
+
+    move(bot.x, bot.y, newX, newY, botId);
+
+    bot.x = newX;
+    bot.y = newY;
+    bot.lastMove = now;
+
+    const updatedMeta = playerMetadata.get(botId);
+    if (updatedMeta) { updatedMeta.kingX = newX; updatedMeta.kingY = newY; }
+  }
+
+  for (const botId of toDelete) {
+    // Remove from owning player's set
+    for (const [pid, bset] of playerPawnBots) {
+      if (bset.has(botId)) { bset.delete(botId); break; }
+    }
+    pawnBots.delete(botId);
+    playerMetadata.delete(botId);
+  }
+}
+
+// Periodic: ensure every live player has their pawn bot complement
+function spawnPawnBots() {
+  for (const client of Object.values(clients)) {
+    if (!client.verified || client.dead) continue;
+    spawnPawnBotsForPlayer(client.id);
+  }
+}
+
 // Run AI systems if enabled
 if (AI_CONFIG.enabled) {
   setInterval(spawnAIPieces, 2000);
   setInterval(moveAIPieces, 1000);
+  setInterval(spawnPawnBots, 3000);
+  setInterval(movePawnBots, PAWN_BOT_MOVE_INTERVAL);
   // Debounced leaderboard broadcast — only sends when dirty (P3)
   setInterval(() => {
     if (leaderboardDirty && Object.keys(clients).length > 0) {
@@ -1394,7 +1581,17 @@ global.app = uWS
         send(ws, tokenBuf);
 
         console.log(`[Respawn] ✓ Player ${ws.id} (${meta.name}) at ${toChessNotation(spawn.x, spawn.y)}`);
+        // 1) Send viewport FIRST — updates selfId on client
         sendViewportState(ws, spawn.x, spawn.y);
+        // 2) THEN send direct setSquare for own piece — triggers isSpawn detection on client
+        //    (same as initial spawn path), which resets gameOver and recenters camera
+        const spawnBuf = new Int32Array(5);
+        spawnBuf[0] = 55555;
+        spawnBuf[1] = spawn.x;
+        spawnBuf[2] = spawn.y;
+        spawnBuf[3] = pieceType;
+        spawnBuf[4] = ws.id;
+        send(ws, spawnBuf.buffer);
         return;
       }
 
@@ -1533,19 +1730,21 @@ global.app = uWS
           });
           console.log(`[Session] Saved: ${meta.name} (#${ws.id}) — ${SESSION_TTL / 1000}s to reconnect`);
           // Don't neutralize yet — session cleanup will handle it if they don't reconnect
-        } else {
-          // No piece on board, neutralize immediately
-          if (ws.id) teamsToNeutralize.push(ws.id);
-          leaderboard.delete(ws.id);
-          playerMetadata.delete(ws.id);
-        }
       } else {
-        // Dead or unverified player — clean up immediately
+        // No piece on board, neutralize immediately
         if (ws.id) teamsToNeutralize.push(ws.id);
-        spawnImmunity.delete(ws.id);
         leaderboard.delete(ws.id);
         playerMetadata.delete(ws.id);
+        cleanupPawnBots(ws.id);
       }
+    } else {
+      // Dead or unverified player — clean up immediately
+      if (ws.id) teamsToNeutralize.push(ws.id);
+      spawnImmunity.delete(ws.id);
+      leaderboard.delete(ws.id);
+      playerMetadata.delete(ws.id);
+      cleanupPawnBots(ws.id);
+    }
 
       leaderboardDirty = true;
 

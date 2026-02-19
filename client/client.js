@@ -1352,6 +1352,15 @@ function render() {
         respawnBtn.classList.remove("hidden");
       }
 
+      // Auto-respawn when countdown expires (fire once)
+      const respawnReady = time >= gameOverTime + respawnTime;
+      if (respawnReady && !window._autoRespawnFired) {
+        window._autoRespawnFired = true;
+        if (window.sendPlayerInfo) window.sendPlayerInfo();
+      }
+      // Keep button disabled until timer expires
+      if (respawnBtn) respawnBtn.disabled = !respawnReady;
+
       // Dark overlay
       ctx.fillStyle = `rgba(0, 0, 0, ${gameOverAlpha * 0.65})`;
       ctx.fillRect(0, 0, canvas.w, canvas.h);
@@ -1514,7 +1523,76 @@ function render() {
 
   // Update piece hover tooltip
   updatePieceTooltip();
+
+  // Draw minimap
+  drawMinimap();
 }
+
+
+// ─── Minimap ────────────────────────────────────────────────────────────────
+const minimapCanvas = document.getElementById("minimap");
+const minimapCtx = minimapCanvas ? minimapCanvas.getContext("2d") : null;
+const MINIMAP_RADIUS = 40;  // World grid squares shown in each direction
+const MINIMAP_SIZE   = 160; // Canvas logical size (CSS doubles this on HiDPI if needed)
+
+function drawMinimap() {
+  if (!minimapCtx || !window.spatialHash) return;
+
+  // Only show when the player is spawned
+  if (typeof selfId === "undefined" || selfId === -1 ||
+      window.myKingX === undefined || window.myKingY === undefined) {
+    if (!minimapCanvas.classList.contains("hidden")) minimapCanvas.classList.add("hidden");
+    return;
+  }
+  if (minimapCanvas.classList.contains("hidden")) minimapCanvas.classList.remove("hidden");
+
+  const mw = minimapCanvas.width  = MINIMAP_SIZE;
+  const mh = minimapCanvas.height = MINIMAP_SIZE;
+  const cx = window.myKingX;
+  const cy = window.myKingY;
+
+  // Background
+  minimapCtx.clearRect(0, 0, mw, mh);
+  minimapCtx.fillStyle = "rgba(10,10,10,0.0)"; // canvas bg already handled by CSS
+  minimapCtx.fillRect(0, 0, mw, mh);
+
+  const scale = mw / (MINIMAP_RADIUS * 2); // pixels per grid square
+
+  // Convert grid coords to minimap canvas coords
+  function toMM(wx, wy) {
+    return [
+      (wx - cx + MINIMAP_RADIUS) * scale,
+      (wy - cy + MINIMAP_RADIUS) * scale,
+    ];
+  }
+
+  // Draw viewport rectangle
+  const viewW = (canvas.w || window.innerWidth) / (camera.scale * squareSize);
+  const viewH = (canvas.h || window.innerHeight) / (camera.scale * squareSize);
+  const [vrx, vry] = toMM(cx - viewW / 2, cy - viewH / 2);
+  minimapCtx.strokeStyle = "rgba(255,255,255,0.25)";
+  minimapCtx.lineWidth = 1;
+  minimapCtx.strokeRect(vrx, vry, viewW * scale, viewH * scale);
+
+  // Draw all pieces in range
+  const pieces = window.spatialHash.queryRadius(cx, cy, MINIMAP_RADIUS);
+  for (const piece of pieces) {
+    if (piece.type === 0) continue;
+    const [px, py] = toMM(piece.x, piece.y);
+    const c = teamToColor(piece.team);
+    minimapCtx.fillStyle = `rgb(${c.r},${c.g},${c.b})`;
+    const dotSize = piece.team === selfId ? 4 : 2.5;
+    minimapCtx.fillRect(px - dotSize / 2, py - dotSize / 2, dotSize, dotSize);
+  }
+
+  // Draw self (bright white dot on top)
+  const [sx, sy] = toMM(cx, cy);
+  minimapCtx.fillStyle = "#ffffff";
+  minimapCtx.beginPath();
+  minimapCtx.arc(sx, sy, 3.5, 0, Math.PI * 2);
+  minimapCtx.fill();
+}
+// ────────────────────────────────────────────────────────────────────────────
 
 
 // Pastel color palette shared by players and AI
