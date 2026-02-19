@@ -1876,43 +1876,14 @@ body.touching * {
 }
 
 /* ======================== */
-/* Steam Store Widget       */
+/* Steam Button             */
 /* ======================== */
 
-/* --- Splash screen embed --- */
-.splash-steam-widget {
-  position: absolute;
-  bottom: 24px;
-  left: 0;
-  right: 0;
+.splash-steam-btn {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  animation: splashTitleIn 0.8s ease-out 0.7s both;
-  pointer-events: auto;
-}
-
-.splash-steam-label {
-  font-family: "Sometype Mono", monospace;
-  font-size: 9px;
-  letter-spacing: 4px;
-  color: var(--text-muted);
-  margin: 0;
-  text-transform: uppercase;
-}
-
-.splash-steam-iframe {
-  display: block;
-  max-width: 100%;
-  border: 1px solid var(--border);
-  background: var(--bg-secondary);
-}
-
-.splash-steam-mobile-btn {
-  display: none;
   align-items: center;
   gap: 10px;
+  margin-top: 24px;
   font-family: "Sometype Mono", monospace;
   font-size: 11px;
   font-weight: 600;
@@ -1923,19 +1894,25 @@ body.touching * {
   padding: 12px 20px;
   text-decoration: none;
   transition: all 0.2s ease;
+  animation: splashTitleIn 0.8s ease-out 0.7s both;
 }
 
-.splash-steam-mobile-btn:hover {
+.splash-steam-btn:hover {
   color: var(--text-primary);
   border-color: var(--border-light);
   background: var(--bg-tertiary);
+  transform: translateY(-2px);
 }
 
-.splash-steam-mobile-btn .steam-icon {
+.splash-steam-btn:active {
+  transform: translateY(0);
+}
+
+.splash-steam-btn .steam-icon {
   flex-shrink: 0;
 }
 
-/* --- Leaderboard Steam Button --- */
+/* Leaderboard Steam Button */
 .leaderboard-steam-btn {
   display: flex;
   align-items: center;
@@ -1963,18 +1940,6 @@ body.touching * {
 
 .leaderboard-steam-btn .steam-icon {
   flex-shrink: 0;
-}
-
-/* Mobile: scale iframe down to fit narrow screens */
-@media (max-width: 680px) {
-  .splash-steam-iframe,
-  .splash-steam-label {
-    display: none;
-  }
-
-  .splash-steam-mobile-btn {
-    display: flex;
-  }
 }
 
 /* Minimap */

@@ -1284,10 +1284,12 @@ function render() {
       ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
       ctx.fillText(`${next.kills - myKills} → ${nextName}`, barX + barW, barY - 4);
 
-      // Kill count inside bar
+      // Kill count inside bar — vertically centered
       ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
       ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
-      ctx.fillText(`${myKills} / ${next.kills}`, barX + barW / 2, barY + barH - 3);
+      ctx.fillText(`${myKills} / ${next.kills}`, barX + barW / 2, barY + barH / 2);
+      ctx.textBaseline = "alphabetic";
     } else {
       // Fully evolved — fill bar completely
       const color = teamToColor(selfId);
