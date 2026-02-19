@@ -53,6 +53,21 @@ setTimeout(() => {
   }
 }, 3000);
 
+// Steam wishlist panel toggle
+(function() {
+  const steamOpenBtn = document.getElementById("steam-panel-open");
+  const steamPanel = document.getElementById("steamPanel");
+  const steamCloseBtn = document.getElementById("steam-panel-close");
+  if (steamOpenBtn && steamPanel && steamCloseBtn) {
+    steamOpenBtn.addEventListener("click", () => {
+      steamPanel.classList.toggle("hidden");
+    });
+    steamCloseBtn.addEventListener("click", () => {
+      steamPanel.classList.add("hidden");
+    });
+  }
+})();
+
 const canvas = document.getElementById("canvas");
 let ctx = null;
 

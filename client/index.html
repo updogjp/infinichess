@@ -98,6 +98,21 @@
             <span class="splash-link-icon">&#9679;</span> TWITTER
           </a>
         </div>
+
+        <!-- Steam Store Widget -->
+        <div class="splash-steam-widget">
+          <p class="splash-steam-label">COMING TO STEAM</p>
+          <iframe
+            src="https://store.steampowered.com/widget/4437010/"
+            frameborder="0"
+            width="646"
+            height="190"
+            class="splash-steam-iframe"
+            loading="lazy"
+            title="Rook on Steam"
+          ></iframe>
+        </div>
+
         <div class="splash-loader" id="splashLoader">
           <div class="splash-loader-bar"></div>
         </div>
@@ -291,6 +306,24 @@
     <button id="respawnBtn" class="respawn-btn hidden" title="Respawn">
       RESPAWN
     </button>
+
+    <!-- Steam Wishlist Panel -->
+    <div id="steamPanel" class="steam-panel hidden">
+      <div class="steam-panel-header">
+        <span class="steam-panel-title">WISHLIST ON STEAM</span>
+        <button id="steam-panel-close" class="collapse-btn">−</button>
+      </div>
+      <iframe
+        src="https://store.steampowered.com/widget/4437010/"
+        frameborder="0"
+        width="646"
+        height="190"
+        class="steam-panel-iframe"
+        loading="lazy"
+        title="Rook on Steam"
+      ></iframe>
+    </div>
+    <button id="steam-panel-open" class="steam-panel-btn hidden" title="Wishlist on Steam">STEAM</button>
 
     <!-- Kill Feed -->
     <div id="killFeed" class="kill-feed"></div>

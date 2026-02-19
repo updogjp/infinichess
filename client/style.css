@@ -1871,3 +1871,119 @@ body.touching * {
   border: 2px solid var(--text-primary);
   box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
 }
+
+/* ======================== */
+/* Steam Store Widget       */
+/* ======================== */
+
+/* --- Splash screen embed --- */
+.splash-steam-widget {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-top: 32px;
+  animation: splashTitleIn 0.8s ease-out 0.7s both;
+}
+
+.splash-steam-label {
+  font-family: "Sometype Mono", monospace;
+  font-size: 9px;
+  letter-spacing: 4px;
+  color: var(--text-muted);
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.splash-steam-iframe {
+  display: block;
+  max-width: 100%;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+}
+
+/* --- In-game toggle button (bottom-center) --- */
+.steam-panel-btn {
+  position: fixed;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: "Sometype Mono", monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 3px;
+  color: var(--text-muted);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  padding: 6px 16px;
+  cursor: pointer;
+  z-index: 400;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.steam-panel-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--border-light);
+  background: var(--bg-tertiary);
+}
+
+/* --- In-game panel --- */
+.steam-panel {
+  position: fixed;
+  bottom: 44px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  z-index: 500;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  animation: splashFadeIn 0.25s ease-out;
+}
+
+.steam-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.steam-panel-title {
+  font-family: "Sometype Mono", monospace;
+  font-size: 9px;
+  letter-spacing: 3px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+}
+
+.steam-panel-iframe {
+  display: block;
+  max-width: 100%;
+}
+
+/* Mobile: scale iframe down to fit narrow screens */
+@media (max-width: 680px) {
+  .splash-steam-iframe,
+  .steam-panel-iframe {
+    width: 100%;
+    height: auto;
+    min-height: 150px;
+  }
+
+  .steam-panel {
+    width: calc(100vw - 16px);
+    left: 8px;
+    right: 8px;
+    transform: none;
+    bottom: 44px;
+  }
+
+  .steam-panel-btn {
+    font-size: 9px;
+    letter-spacing: 2px;
+    padding: 5px 12px;
+  }
+}

@@ -77,11 +77,12 @@ const activeChatBubbles = new Map(); // playerId -> { text, time, element }
 
 function setupWebSocketHandlers() {
 ws.addEventListener("message", function (data) {
-  const u8 = new Uint8Array(data.data);
-  // Use Int32Array for coordinate messages, Uint16Array for legacy text messages
-  const i32 = data.data.byteLength >= 4 && data.data.byteLength % 4 === 0
-    ? new Int32Array(data.data) : null;
-  const msg = new Uint16Array(data.data.byteLength % 2 === 0 ? data.data : new ArrayBuffer(0));
+  try {
+    const u8 = new Uint8Array(data.data);
+    // Use Int32Array for coordinate messages, Uint16Array for legacy text messages
+    const i32 = data.data.byteLength >= 4 && data.data.byteLength % 4 === 0
+      ? new Int32Array(data.data) : null;
+    const msg = new Uint16Array(data.data.byteLength % 2 === 0 ? data.data : new ArrayBuffer(0));
 
   // Viewport sync (initial or periodic update) — Int32Array
   if (i32 && i32[0] === 55553) {
@@ -377,6 +378,10 @@ ws.addEventListener("message", function (data) {
         if (statsPanel) statsPanel.classList.remove("hidden");
       }
 
+      // Show Steam wishlist button
+      const steamOpenBtnRestore = document.getElementById("steam-panel-open");
+      if (steamOpenBtnRestore) steamOpenBtnRestore.classList.remove("hidden");
+
       gameOver = false;
       gameOverAlpha = 0;
       window.gameOverKiller = null;
@@ -511,6 +516,17 @@ ws.addEventListener("message", function (data) {
     updateTop3Leaderboard(top3);
     return;
   }
+  } catch (error) {
+    if (window.errorTracker) {
+      window.errorTracker.captureError({
+        type: 'websocket_message_handler_error',
+        message: error.message,
+        stack: error.stack,
+        timestamp: new Date().toISOString(),
+      });
+    }
+    console.error('❌ Error processing WebSocket message:', error);
+  }
 });
 
 window.send = (data) => {
@@ -518,60 +534,107 @@ window.send = (data) => {
 };
 
 ws.onopen = () => {
-  connected = true;
-  reconnectAttempts = 0;
-  console.log("✓ WebSocket connected");
-  if (window.posthog && window.posthog.capture) {
-    window.posthog.capture('ws_connected');
-    if (window.posthog.flush) window.posthog.flush();
-  }
-  window.send = (data) => {
-    ws.send(data);
-  };
+  try {
+    connected = true;
+    reconnectAttempts = 0;
+    console.log("✓ WebSocket connected");
+    if (window.posthog && window.posthog.capture) {
+      window.posthog.capture('ws_connected');
+      if (window.posthog.flush) window.posthog.flush();
+    }
+    window.send = (data) => {
+      ws.send(data);
+    };
 
-  // On reconnect, try to resume session before sending queued messages
-  const savedToken = window._sessionToken || (() => {
-    try { return sessionStorage.getItem('infinichess_session'); } catch (e) { return null; }
-  })();
-  if (savedToken && savedToken.length === 32 && selfId !== -1) {
-    console.log('🔄 Attempting session resume...');
-    const resumeBuf = new Uint8Array(34);
-    const resumeU16 = new Uint16Array(resumeBuf.buffer, 0, 1);
-    resumeU16[0] = 55557; // Magic: session resume request
-    const tokenBytes = new TextEncoder().encode(savedToken);
-    for (let t = 0; t < 32; t++) resumeBuf[2 + t] = tokenBytes[t];
-    ws.send(resumeBuf);
-    // Don't flush queued messages yet — wait for session response
-    return;
-  }
+    // On reconnect, try to resume session before sending queued messages
+    const savedToken = window._sessionToken || (() => {
+      try { return sessionStorage.getItem('infinichess_session'); } catch (e) { return null; }
+    })();
+    if (savedToken && savedToken.length === 32 && selfId !== -1) {
+      console.log('🔄 Attempting session resume...');
+      const resumeBuf = new Uint8Array(34);
+      const resumeU16 = new Uint16Array(resumeBuf.buffer, 0, 1);
+      resumeU16[0] = 55557; // Magic: session resume request
+      const tokenBytes = new TextEncoder().encode(savedToken);
+      for (let t = 0; t < 32; t++) resumeBuf[2 + t] = tokenBytes[t];
+      ws.send(resumeBuf);
+      // Don't flush queued messages yet — wait for session response
+      return;
+    }
 
-  for (let i = 0; i < msgs.length; i++) {
-    window.send(msgs[i]);
+    for (let i = 0; i < msgs.length; i++) {
+      window.send(msgs[i]);
+    }
+    msgs.length = 0;
+  } catch (error) {
+    if (window.errorTracker) {
+      window.errorTracker.captureError({
+        type: 'websocket_onopen_error',
+        message: error.message,
+        stack: error.stack,
+        timestamp: new Date().toISOString(),
+      });
+    }
+    console.error('❌ Error in WebSocket onopen handler:', error);
   }
-  msgs.length = 0;
 };
 
 ws.onerror = (error) => {
-  console.error("❌ WebSocket error:", error);
-  if (window.posthog && window.posthog.capture) window.posthog.capture('ws_error', { error: String(error) });
+  try {
+    console.error("❌ WebSocket error:", error);
+    if (window.errorTracker) {
+      window.errorTracker.captureError({
+        type: 'websocket_onerror',
+        message: error.message || String(error),
+        timestamp: new Date().toISOString(),
+      });
+    }
+    if (window.posthog && window.posthog.capture) {
+      window.posthog.capture('ws_error', { error: String(error) });
+      if (window.posthog.flush) window.posthog.flush();
+    }
+  } catch (e) {
+    console.error('❌ Error in WebSocket onerror handler:', e);
+  }
 };
 
 ws.onclose = () => {
-  connected = false;
-  console.log("Disconnected from server");
-  if (window.posthog && window.posthog.capture) window.posthog.capture('ws_disconnected', { reconnect_attempts: reconnectAttempts });
-  window.send = (data) => { msgs.push(data); };
+  try {
+    connected = false;
+    console.log("Disconnected from server");
+    if (window.errorTracker) {
+      window.errorTracker.captureMessage('WebSocket disconnected', 'info', {
+        reconnect_attempts: reconnectAttempts,
+        max_attempts: MAX_RECONNECT_ATTEMPTS,
+      });
+    }
+    if (window.posthog && window.posthog.capture) {
+      window.posthog.capture('ws_disconnected', { reconnect_attempts: reconnectAttempts });
+      if (window.posthog.flush) window.posthog.flush();
+    }
+    window.send = (data) => { msgs.push(data); };
 
-  if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-    const delay = BASE_RECONNECT_DELAY * Math.pow(2, reconnectAttempts);
-    reconnectAttempts++;
-    console.log(`🔄 Reconnecting in ${delay}ms (attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`);
-    window.showToast(`Reconnecting... (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`, "error", delay);
-    setTimeout(() => {
-      connectWebSocket();
-    }, delay);
-  } else {
-    window.showToast("Connection lost. Refresh to retry.", "error", 10000);
+    if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+      const delay = BASE_RECONNECT_DELAY * Math.pow(2, reconnectAttempts);
+      reconnectAttempts++;
+      console.log(`🔄 Reconnecting in ${delay}ms (attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`);
+      window.showToast(`Reconnecting... (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`, "error", delay);
+      setTimeout(() => {
+        connectWebSocket();
+      }, delay);
+    } else {
+      window.showToast("Connection lost. Refresh to retry.", "error", 10000);
+    }
+  } catch (error) {
+    if (window.errorTracker) {
+      window.errorTracker.captureError({
+        type: 'websocket_onclose_error',
+        message: error.message,
+        stack: error.stack,
+        timestamp: new Date().toISOString(),
+      });
+    }
+    console.error('❌ Error in WebSocket onclose handler:', error);
   }
 };
 } // end setupWebSocketHandlers
@@ -719,6 +782,10 @@ function initPlayerSetup() {
       if (statsPanel) statsPanel.classList.remove("hidden");
     }
 
+    // Show Steam wishlist button
+    const steamOpenBtn = document.getElementById("steam-panel-open");
+    if (steamOpenBtn) steamOpenBtn.classList.remove("hidden");
+
     // Send player info to server
     sendPlayerInfo();
   });
@@ -742,6 +809,10 @@ function initPlayerSetup() {
       } else {
         if (statsPanel) statsPanel.classList.remove("hidden");
       }
+
+      // Show Steam wishlist button
+      const steamOpenBtnSpec = document.getElementById("steam-panel-open");
+      if (steamOpenBtnSpec) steamOpenBtnSpec.classList.remove("hidden");
 
       // Center camera at origin and request viewport
       camera.x = 0;
