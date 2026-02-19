@@ -1879,14 +1879,15 @@ body.touching * {
 /* --- Splash screen embed --- */
 .splash-steam-widget {
   position: absolute;
-  top: 50%;
+  bottom: 24px;
   left: 50%;
-  transform: translate(-50%, -50%);
+  transform: translateX(-50%);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   animation: splashTitleIn 0.8s ease-out 0.7s both;
+  pointer-events: auto;
 }
 
 .splash-steam-label {
@@ -1929,68 +1930,6 @@ body.touching * {
 
 .splash-steam-mobile-btn .steam-icon {
   flex-shrink: 0;
-}
-
-/* --- In-game toggle button (bottom-center) --- */
-.steam-panel-btn {
-  position: fixed;
-  bottom: 12px;
-  left: 50%;
-  transform: translateX(-50%);
-  font-family: "Sometype Mono", monospace;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 3px;
-  color: var(--text-muted);
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  padding: 6px 16px;
-  cursor: pointer;
-  z-index: 400;
-  transition: all 0.2s ease;
-  white-space: nowrap;
-}
-
-.steam-panel-btn:hover {
-  color: var(--text-primary);
-  border-color: var(--border-light);
-  background: var(--bg-tertiary);
-}
-
-/* --- In-game panel --- */
-.steam-panel {
-  position: fixed;
-  bottom: 44px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  z-index: 500;
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  animation: splashFadeIn 0.25s ease-out;
-}
-
-.steam-panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 6px 10px;
-  border-bottom: 1px solid var(--border);
-}
-
-.steam-panel-title {
-  font-family: "Sometype Mono", monospace;
-  font-size: 9px;
-  letter-spacing: 3px;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-}
-
-.steam-panel-iframe {
-  display: block;
-  max-width: 100%;
 }
 
 /* --- Leaderboard Steam Button --- */
