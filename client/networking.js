@@ -378,10 +378,6 @@ ws.addEventListener("message", function (data) {
         if (statsPanel) statsPanel.classList.remove("hidden");
       }
 
-      // Show Steam wishlist button
-      const steamOpenBtnRestore = document.getElementById("steam-panel-open");
-      if (steamOpenBtnRestore) steamOpenBtnRestore.classList.remove("hidden");
-
       gameOver = false;
       gameOverAlpha = 0;
       window.gameOverKiller = null;
@@ -782,10 +778,6 @@ function initPlayerSetup() {
       if (statsPanel) statsPanel.classList.remove("hidden");
     }
 
-    // Show Steam wishlist button
-    const steamOpenBtn = document.getElementById("steam-panel-open");
-    if (steamOpenBtn) steamOpenBtn.classList.remove("hidden");
-
     // Send player info to server
     sendPlayerInfo();
   });
@@ -809,10 +801,6 @@ function initPlayerSetup() {
       } else {
         if (statsPanel) statsPanel.classList.remove("hidden");
       }
-
-      // Show Steam wishlist button
-      const steamOpenBtnSpec = document.getElementById("steam-panel-open");
-      if (steamOpenBtnSpec) steamOpenBtnSpec.classList.remove("hidden");
 
       // Center camera at origin and request viewport
       camera.x = 0;

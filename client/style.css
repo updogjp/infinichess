@@ -1878,11 +1878,14 @@ body.touching * {
 
 /* --- Splash screen embed --- */
 .splash-steam-widget {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 10px;
-  margin-top: 32px;
   animation: splashTitleIn 0.8s ease-out 0.7s both;
 }
 
@@ -1900,6 +1903,32 @@ body.touching * {
   max-width: 100%;
   border: 1px solid var(--border);
   background: var(--bg-secondary);
+}
+
+.splash-steam-mobile-btn {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  font-family: "Sometype Mono", monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  padding: 12px 20px;
+  text-decoration: none;
+  transition: all 0.2s ease;
+}
+
+.splash-steam-mobile-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--border-light);
+  background: var(--bg-tertiary);
+}
+
+.splash-steam-mobile-btn .steam-icon {
+  flex-shrink: 0;
 }
 
 /* --- In-game toggle button (bottom-center) --- */
@@ -1964,26 +1993,44 @@ body.touching * {
   max-width: 100%;
 }
 
+/* --- Leaderboard Steam Button --- */
+.leaderboard-steam-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: "Sometype Mono", monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  color: var(--text-muted);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  padding: 10px 12px;
+  text-decoration: none;
+  transition: all 0.2s ease;
+  margin-top: auto;
+  flex-shrink: 0;
+}
+
+.leaderboard-steam-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--border-light);
+  background: var(--bg-secondary);
+}
+
+.leaderboard-steam-btn .steam-icon {
+  flex-shrink: 0;
+}
+
 /* Mobile: scale iframe down to fit narrow screens */
 @media (max-width: 680px) {
   .splash-steam-iframe,
-  .steam-panel-iframe {
-    width: 100%;
-    height: auto;
-    min-height: 150px;
+  .splash-steam-label {
+    display: none;
   }
 
-  .steam-panel {
-    width: calc(100vw - 16px);
-    left: 8px;
-    right: 8px;
-    transform: none;
-    bottom: 44px;
-  }
-
-  .steam-panel-btn {
-    font-size: 9px;
-    letter-spacing: 2px;
-    padding: 5px 12px;
+  .splash-steam-mobile-btn {
+    display: flex;
   }
 }

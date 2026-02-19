@@ -100,6 +100,11 @@
         </div>
 
         <!-- Steam Store Widget -->
+
+        <div class="splash-loader" id="splashLoader">
+          <div class="splash-loader-bar"></div>
+        </div>
+        <button id="playButton" class="play-button hidden">[ PLAY ]</button>
         <div class="splash-steam-widget">
           <p class="splash-steam-label">COMING TO STEAM</p>
           <iframe
@@ -111,12 +116,18 @@
             loading="lazy"
             title="Rook on Steam"
           ></iframe>
+          <a
+            href="https://store.steampowered.com/app/4437010"
+            target="_blank"
+            rel="noopener"
+            class="splash-steam-mobile-btn"
+          >
+            <svg class="steam-icon" viewBox="0 0 24 24" width="18" height="18">
+              <path fill="currentColor" d="M12 2a10 10 0 0 0-9.96 9.16l5.17 2.14a2.85 2.85 0 0 1 1.57-.47c.06 0 .11 0 .17.01l2.35-3.41v-.05a3.8 3.8 0 1 1 3.8 3.8h-.08l-3.35 2.4c0 .07.01.13.01.2a2.86 2.86 0 0 1-5.7.36l-3.7-1.53A10 10 0 1 0 12 2zm-4.17 13.65l-1.18-.49a2.14 2.14 0 0 0 3.26 1.83l-1.14-.47a1.17 1.17 0 0 1-.94-.87zm6.56-4.72a2.25 2.25 0 1 0-2.25-2.25 2.25 2.25 0 0 0 2.25 2.25zm0-3.6a1.35 1.35 0 1 1-1.35 1.35 1.35 1.35 0 0 1 1.35-1.35z"/>
+            </svg>
+            <span>WISHLIST ROOK ON STEAM</span>
+          </a>
         </div>
-
-        <div class="splash-loader" id="splashLoader">
-          <div class="splash-loader-bar"></div>
-        </div>
-        <button id="playButton" class="play-button hidden">[ PLAY ]</button>
       </div>
     </div>
 
@@ -237,6 +248,17 @@
         </div>
         <div id="top3-container"></div>
         <div id="leaderboard-content"></div>
+        <a
+          href="https://store.steampowered.com/app/4437010"
+          target="_blank"
+          rel="noopener"
+          class="leaderboard-steam-btn"
+        >
+          <svg class="steam-icon" viewBox="0 0 24 24" width="14" height="14">
+            <path fill="currentColor" d="M12 2a10 10 0 0 0-9.96 9.16l5.17 2.14a2.85 2.85 0 0 1 1.57-.47c.06 0 .11 0 .17.01l2.35-3.41v-.05a3.8 3.8 0 1 1 3.8 3.8h-.08l-3.35 2.4c0 .07.01.13.01.2a2.86 2.86 0 0 1-5.7.36l-3.7-1.53A10 10 0 1 0 12 2zm-4.17 13.65l-1.18-.49a2.14 2.14 0 0 0 3.26 1.83l-1.14-.47a1.17 1.17 0 0 1-.94-.87zm6.56-4.72a2.25 2.25 0 1 0-2.25-2.25 2.25 2.25 0 0 0 2.25 2.25zm0-3.6a1.35 1.35 0 1 1-1.35 1.35 1.35 1.35 0 0 1 1.35-1.35z"/>
+          </svg>
+          <span>WISHLIST ON STEAM</span>
+        </a>
       </div>
     </div>
     <button id="lb-expand" class="panel-tab panel-tab-right hidden">LB</button>
@@ -306,24 +328,6 @@
     <button id="respawnBtn" class="respawn-btn hidden" title="Respawn">
       RESPAWN
     </button>
-
-    <!-- Steam Wishlist Panel -->
-    <div id="steamPanel" class="steam-panel hidden">
-      <div class="steam-panel-header">
-        <span class="steam-panel-title">WISHLIST ON STEAM</span>
-        <button id="steam-panel-close" class="collapse-btn">−</button>
-      </div>
-      <iframe
-        src="https://store.steampowered.com/widget/4437010/"
-        frameborder="0"
-        width="646"
-        height="190"
-        class="steam-panel-iframe"
-        loading="lazy"
-        title="Rook on Steam"
-      ></iframe>
-    </div>
-    <button id="steam-panel-open" class="steam-panel-btn hidden" title="Wishlist on Steam">STEAM</button>
 
     <!-- Kill Feed -->
     <div id="killFeed" class="kill-feed"></div>
