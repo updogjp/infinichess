@@ -278,13 +278,31 @@ ws.addEventListener("message", function (data) {
     const endPiece = spatialHash.get(finX, finY);
     const isCapture = endPiece.type !== 0;
 
-    // Detect if WE were captured (our piece is at the destination)
-    const weWereCaptured = isCapture && endPiece.team === selfId && playerId !== selfId;
+    // Detect if WE were captured (our piece is at the destination).
+    // Race condition: if we sent a move optimistically, our piece was already removed
+    // from finX,finY in the local spatial hash before the server's capture message
+    // arrived, so endPiece.team reads 0 even though the server did capture us there.
+    // We detect this by checking whether the capture target matches the *source* square
+    // of our pending unconfirmed move (unconfirmedSX/SY), meaning the server captured
+    // us at our old position before it saw (or processed) our move.
+    const captureWasAtOurOptimisticSource =
+      playerId !== selfId &&
+      unconfirmedSX === finX &&
+      unconfirmedSY === finY;
+    const weWereCaptured =
+      (isCapture && endPiece.team === selfId && playerId !== selfId) ||
+      captureWasAtOurOptimisticSource;
 
     // Update spatial hash: move piece from start to finish
     if (movingPiece.type !== 0) {
       spatialHash.set(startX, startY, 0, 0);
       spatialHash.set(finX, finY, movingPiece.type, playerId);
+    }
+
+    // If we were captured via the optimistic-move race condition, our piece was
+    // ghost-placed at unconfirmedFX/FY by the optimistic update — clear it now.
+    if (captureWasAtOurOptimisticSource && unconfirmedFX !== undefined) {
+      spatialHash.set(unconfirmedFX, unconfirmedFY, 0, 0);
     }
 
     // Play sounds for all visible captures/moves (not just self)
@@ -304,9 +322,16 @@ ws.addEventListener("message", function (data) {
     }
 
     // Visual capture effect on the capture square
-    if (isCapture && window.triggerCaptureEffect) {
-      const attackerColor = teamToColor(playerId);
-      window.triggerCaptureEffect(finX, finY, attackerColor, endPiece.type);
+    if (window.triggerCaptureEffect) {
+      if (isCapture) {
+        const attackerColor = teamToColor(playerId);
+        window.triggerCaptureEffect(finX, finY, attackerColor, endPiece.type);
+      } else if (captureWasAtOurOptimisticSource) {
+        // Race condition capture: our piece type is no longer readable from endPiece
+        // (it was moved by the optimistic update), so pass 0 as a fallback
+        const attackerColor = teamToColor(playerId);
+        window.triggerCaptureEffect(finX, finY, attackerColor, 0);
+      }
     }
 
     // If we were captured, trigger game over
@@ -322,6 +347,7 @@ ws.addEventListener("message", function (data) {
       const selfInfo = window.playerNamesMap && window.playerNamesMap[selfId];
       gameOverKillsAtDeath = selfInfo ? (selfInfo.kills || 0) : 0;
       selectedSquareX = selectedSquareY = undefined;
+      unconfirmedSX = unconfirmedSY = unconfirmedFX = unconfirmedFY = undefined;
       legalMoves = undefined;
       draggingSelected = false;
       moveWasDrag = false;
@@ -364,10 +390,15 @@ ws.addEventListener("message", function (data) {
 
     // Clear selection if our piece moved (server confirmed)
     if (playerId === selfId) {
-      if (selectedSquareX === startX && selectedSquareY === startY) {
+      if (unconfirmedSX === startX && unconfirmedSY === startY) {
         unconfirmedSX =
           unconfirmedSY =
-          selectedSquareX =
+          unconfirmedFX =
+          unconfirmedFY =
+            undefined;
+      }
+      if (selectedSquareX === startX && selectedSquareY === startY) {
+        selectedSquareX =
           selectedSquareY =
             undefined;
         legalMoves = undefined;

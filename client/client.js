@@ -288,11 +288,13 @@ window.onmousedown = (e) => {
 
         legalMoves = [];
 
+        unconfirmedSX = selectedSquareX; // source (old square) — set before reassigning selectedSquare
+        unconfirmedSY = selectedSquareY;
+        unconfirmedFX = squareX;         // destination (new square)
+        unconfirmedFY = squareY;
+
         selectedSquareX = squareX;
         selectedSquareY = squareY;
-
-        unconfirmedSX = selectedSquareX;
-        unconfirmedSY = selectedSquareY;
 
         moveWasDrag = false;
         cooldownEndTime = performance.now() + (window.moveCooldown || 1500);
@@ -332,7 +334,8 @@ window.onmousedown = (e) => {
   }
 };
 
-var unconfirmedSX, unconfirmedSY;
+var unconfirmedSX, unconfirmedSY; // source square of unconfirmed optimistic move
+var unconfirmedFX, unconfirmedFY; // destination square of unconfirmed optimistic move
 window.onmouseup = (e) => {
   // End camera panning
   if (isPanning) {
@@ -371,6 +374,8 @@ window.onmouseup = (e) => {
       legalMoves = [];
       unconfirmedSX = selectedSquareX;
       unconfirmedSY = selectedSquareY;
+      unconfirmedFX = newX;
+      unconfirmedFY = newY;
 
       moveWasDrag = true;
       cooldownEndTime = performance.now() + (window.moveCooldown || 1500);
@@ -2022,6 +2027,8 @@ canvas.addEventListener("touchend", (e) => {
         legalMoves = [];
         unconfirmedSX = selectedSquareX;
         unconfirmedSY = selectedSquareY;
+        unconfirmedFX = dropX;
+        unconfirmedFY = dropY;
         selectedSquareX = dropX;
         selectedSquareY = dropY;
         moveWasDrag = true;
@@ -2055,6 +2062,10 @@ canvas.addEventListener("touchend", (e) => {
             window.spatialHash.set(squareX, squareY, movingPiece.type, selfId);
 
             legalMoves = [];
+            unconfirmedSX = selectedSquareX; // source (old square) — set before reassigning
+            unconfirmedSY = selectedSquareY;
+            unconfirmedFX = squareX;         // destination (new square)
+            unconfirmedFY = squareY;
             selectedSquareX = squareX;
             selectedSquareY = squareY;
             cooldownEndTime = performance.now() + (window.moveCooldown || 1500);
