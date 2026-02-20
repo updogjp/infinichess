@@ -4,6 +4,7 @@ const MAX_RECONNECT_ATTEMPTS = 8;
 const BASE_RECONNECT_DELAY = 1000; // 1s, doubles each attempt
 let connected = false;
 let _keepaliveInterval = null;
+let _respawnRetryTimeout = null; // pending retry timer for dropped/early respawn triggers
 const msgs = [];
 
 // Session tracking for analytics
@@ -234,6 +235,8 @@ ws.addEventListener("message", function (data) {
         gameOverTime = undefined;
         gameOverAlpha = 0;
         window.gameOverKiller = null;
+        // Clear any pending respawn retry — we're alive again
+        if (_respawnRetryTimeout) { clearTimeout(_respawnRetryTimeout); _respawnRetryTimeout = null; }
         interpSquare = [x, y];
 
         camera.x = -(x * squareSize + squareSize / 2);
@@ -428,7 +431,20 @@ ws.addEventListener("message", function (data) {
     return;
   }
 
-  // Session token assignment from server (magic 55559 + 32-byte token)
+  // Respawn-not-ready (55561): server got our trigger but the timer hasn't elapsed yet.
+  // Schedule a retry in 500ms so the player doesn't have to click the button again.
+  else if (msg[0] === 55561 && data.data.byteLength === 2) {
+    console.log("[Respawn] Server says too early — retrying in 500ms");
+    if (_respawnRetryTimeout) clearTimeout(_respawnRetryTimeout);
+    _respawnRetryTimeout = setTimeout(() => {
+      _respawnRetryTimeout = null;
+      if (gameOver) {
+        console.log("[Respawn] Auto-retrying respawn trigger");
+        window.sendPlayerInfo();
+      }
+    }, 500);
+    return;
+  }
   else if (msg[0] === 55559 && data.data.byteLength === 34) {
     const token = decodeText(u8, 2, 34);
     window._sessionToken = token;
@@ -971,6 +987,9 @@ function hexToRgb(hex) {
 
 window.sendPlayerInfo = sendPlayerInfo;
 function sendPlayerInfo() {
+  // Cancel any in-flight respawn retry — we're issuing a fresh attempt now
+  if (_respawnRetryTimeout) { clearTimeout(_respawnRetryTimeout); _respawnRetryTimeout = null; }
+
   // Send player info: magic(2) + nameLen(1) + r(1) + g(1) + b(1) + piece(1) + padding(1) + name(variable)
   const nameBuf = new TextEncoder().encode(window.playerName);
   // Ensure even byte length so server can safely create Uint16Array
@@ -1010,6 +1029,20 @@ function sendPlayerInfo() {
     send(spawnBuf);
     console.log("📤 Sent spawn trigger");
   }, 100);
+
+  // Safety-net: if no spawn confirmation (isSpawn) arrives within 3s, retry automatically.
+  // This covers the rare case where both the trigger and the server's "too early" response
+  // are dropped (e.g. intermittent packet loss on Render's network edge).
+  if (gameOver) {
+    if (_respawnRetryTimeout) clearTimeout(_respawnRetryTimeout);
+    _respawnRetryTimeout = setTimeout(() => {
+      _respawnRetryTimeout = null;
+      if (gameOver) {
+        console.log("[Respawn] Safety-net retry triggered (no confirmation in 3s)");
+        window.sendPlayerInfo();
+      }
+    }, 3000);
+  }
 }
 
 // Floating chat bubbles

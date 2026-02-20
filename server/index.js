@@ -1317,6 +1317,20 @@ global.app = uWS
     },
 
     message: (ws, data) => {
+      // Dead-player respawn check runs BEFORE rate limiting so the trigger
+      // is never accidentally swallowed by the rate limiter during burst windows.
+      if (ws.dead === true) {
+        if (Date.now() < ws.respawnTime) {
+          // Tell the client it's too early so it can schedule an exact retry
+          // instead of relying on a second button-click or blind polling.
+          const tooEarlyBuf = new Uint16Array(1);
+          tooEarlyBuf[0] = 55561; // magic: respawn-not-ready
+          send(ws, tooEarlyBuf);
+          return;
+        }
+        // Timer has elapsed — fall through to the respawn handler below.
+      }
+
       // Per-connection message rate limiting (R3) — max 60 msgs/sec
       const now = Date.now();
       if (now - ws.msgWindowStart > 1000) {
@@ -1551,8 +1565,6 @@ global.app = uWS
 
       // Dead players: handle respawn trigger
       if (ws.dead === true) {
-        if (Date.now() < ws.respawnTime) return;
-
         const meta = playerMetadata.get(ws.id);
         if (!meta || !meta.name) return;
 
