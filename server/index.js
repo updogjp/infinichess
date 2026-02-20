@@ -1448,13 +1448,17 @@ global.app = uWS
         if (name.length === 0) name = "Player" + ws.id;
         name = cleanBadWords(name);
 
-        // Store player metadata
+        // Store player metadata — preserve kingX/kingY if player is already alive
+        // to prevent alreadySpawned from evaluating false when sendPlayerInfo is called
+        // on a live player (e.g. reconnect or retry), which would erroneously trigger a
+        // second fresh spawn at a new random location.
+        const prevMeta = playerMetadata.get(ws.id);
         playerMetadata.set(ws.id, {
           name: name,
           color: { r, g, b },
           pieceType: pieceType,
-          kingX: 0,
-          kingY: 0,
+          kingX: (prevMeta && !ws.dead) ? prevMeta.kingX : 0,
+          kingY: (prevMeta && !ws.dead) ? prevMeta.kingY : 0,
         });
 
         // Initialize leaderboard entry if not exists
@@ -1631,6 +1635,9 @@ global.app = uWS
 
       if (data.byteLength % 2 !== 0) return;
       const decoded = new Uint16Array(data.byteLength >= 2 ? data : new ArrayBuffer(0));
+
+      // Keepalive ping from client — silently ignore
+      if (decoded[0] === 55560) return;
 
       // Chat message
       if (decoded[0] === 47095) {

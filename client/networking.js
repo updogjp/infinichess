@@ -3,6 +3,7 @@ let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 8;
 const BASE_RECONNECT_DELAY = 1000; // 1s, doubles each attempt
 let connected = false;
+let _keepaliveInterval = null;
 const msgs = [];
 
 // Session tracking for analytics
@@ -146,7 +147,7 @@ ws.addEventListener("message", function (data) {
 
     // Center camera on our piece if we just spawned (had no piece before)
     const hadPieceBefore = window._hadMyPiece || false;
-    console.log(`📍 Viewport: myPiece=(${myPieceX},${myPieceY}), hadBefore=${hadPieceBefore}, selfId=${selfId}`);
+    console.log(`📍 Viewport: myPiece=(${myPieceX},${myPieceY}), hadBefore=${hadPieceBefore}, selfId=${selfId}, gameOver=${gameOver}`);
     if (myPieceX !== null && myPieceY !== null && !hadPieceBefore) {
       camera.x = -(myPieceX * squareSize + squareSize / 2);
       camera.y = -(myPieceY * squareSize + squareSize / 2);
@@ -201,6 +202,8 @@ ws.addEventListener("message", function (data) {
       // already has team===selfId, which would otherwise cause isSpawn to evaluate false.
       const isSpawn = oldPiece.type === 0 || oldPiece.team !== selfId || gameOver === true;
 
+      console.log(`[55555] isSpawn=${isSpawn} isEvolution=${isEvolution} gameOver=${gameOver} oldPiece={type:${oldPiece.type},team:${oldPiece.team}} newPiece={type:${piece}} selfId=${selfId}`);
+
       if (isEvolution) {
         // Evolution — show toast, don't recenter camera
         const pieceName = PIECE_NAMES[piece] || "piece";
@@ -237,6 +240,21 @@ ws.addEventListener("message", function (data) {
         camera.y = -(y * squareSize + squareSize / 2);
 
         cooldownEndTime = 0;
+
+        // Post-spawn survival logging: verify piece persists and we stay alive
+        const _spawnX = x, _spawnY = y, _spawnType = piece;
+        [100, 500, 1000, 2000].forEach(function(delay) {
+          setTimeout(function() {
+            const p = spatialHash.get(_spawnX, _spawnY);
+            console.log(`[SpawnCheck +${delay}ms] square(${_spawnX},${_spawnY}): type=${p.type} team=${p.team} selfId=${selfId} gameOver=${gameOver}`);
+            if (gameOver) {
+              console.warn(`[SpawnCheck +${delay}ms] *** gameOver became true after spawn! ***`);
+            }
+            if (p.team !== selfId || p.type !== _spawnType) {
+              console.warn(`[SpawnCheck +${delay}ms] *** piece at spawn square changed! expected type=${_spawnType} team=${selfId}, got type=${p.type} team=${p.team} ***`);
+            }
+          }, delay);
+        });
 
         setTimeout(() => {
           if (gameOver === false) interpSquare = undefined;
@@ -294,6 +312,7 @@ ws.addEventListener("message", function (data) {
     // If we were captured, trigger game over
     if (weWereCaptured) {
       gameOver = true;
+      console.log(`[Death] gameOver set to true. selfId=${selfId}, killedBy=${playerId}`);
       gameOverTime = performance.now();
       gameOverAlpha = 0;
       // Determine killer name
@@ -582,6 +601,17 @@ ws.onopen = () => {
     connected = true;
     reconnectAttempts = 0;
     console.log("✓ WebSocket connected");
+
+    // Keepalive: send a no-op ping every 30s to prevent Render's 55s idle timeout
+    // from dropping the connection. Magic 55560 is silently ignored by the server.
+    if (_keepaliveInterval) clearInterval(_keepaliveInterval);
+    _keepaliveInterval = setInterval(() => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        const ping = new Uint16Array(1);
+        ping[0] = 55560;
+        ws.send(ping.buffer);
+      }
+    }, 30000);
     if (window.posthog && window.posthog.capture) {
       window.posthog.capture('ws_connected');
     }
@@ -640,6 +670,7 @@ ws.onerror = (error) => {
 ws.onclose = () => {
   try {
     connected = false;
+    if (_keepaliveInterval) { clearInterval(_keepaliveInterval); _keepaliveInterval = null; }
     console.log("Disconnected from server");
     if (window.errorTracker) {
       window.errorTracker.captureMessage('WebSocket disconnected', 'info', {

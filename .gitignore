@@ -93,6 +93,10 @@ jspm_packages/
 # Infinicode / AI-specific
 .opencode/
 
+# Test scripts
+test_*.cjs
+test_*.js
+
 # Infinichess specific
 # Server data (world persistence)
 server/world.dat
