@@ -1867,12 +1867,15 @@ app.get("/", (res, req) => {
   }
   servedIps[ip]++;
 
-  // Disable caching for index.html (sitekey is injected dynamically)
+  // Disable caching for index.html (keys are injected dynamically)
   res.writeHeader("Cache-Control", "no-cache, no-store, must-revalidate");
   res.writeHeader("Pragma", "no-cache");
   res.writeHeader("Expires", "0");
 
   let html = fsSync.readFileSync("client/index.html", "utf-8");
+  // Inject PostHog key from environment into the analytics script tag placeholder.
+  const posthogKey = process.env.POSTHOG_KEY || '';
+  html = html.replace('data-posthog-key="__POSTHOG_KEY__"', `data-posthog-key="${posthogKey}"`);
   res.end(html);
 });
 

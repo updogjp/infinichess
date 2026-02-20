@@ -147,18 +147,6 @@ window.onerror = (msg, src, line, col, error) => {
   console.error("   Source:", errorInfo.source, "Line:", errorInfo.line, "Col:", errorInfo.column);
   if (error && error.stack) console.error("   Stack:", error.stack);
 
-  // Send to PostHog
-  if (window.posthog && window.posthog.capture) {
-    window.posthog.capture('client_error', {
-      message: errorInfo.message,
-      source: errorInfo.source,
-      line: errorInfo.line,
-      column: errorInfo.column,
-      stack: errorInfo.stack,
-      url: errorInfo.url,
-    });
-  }
-
   const short = String(msg).slice(0, 80);
   window.showToast(`${short}`, "error", 5000);
   return true;
@@ -181,14 +169,6 @@ window.onunhandledrejection = (e) => {
 
   console.error("🔴 [UNHANDLED REJECTION]", msg);
   if (reason && reason.stack) console.error("   Stack:", reason.stack);
-
-  if (window.posthog && window.posthog.capture) {
-    window.posthog.capture('client_unhandled_rejection', {
-      message: errorInfo.message,
-      stack: errorInfo.stack,
-      url: errorInfo.url,
-    });
-  }
 
   window.showToast(msg, "error", 5000);
 };
