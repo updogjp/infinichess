@@ -242,6 +242,11 @@ ws.addEventListener("message", function (data) {
         camera.x = -(x * squareSize + squareSize / 2);
         camera.y = -(y * squareSize + squareSize / 2);
 
+        // Immediately update cached position so follow camera targets the new spawn
+        // location on the very next frame, rather than the stale pre-death position.
+        window.myKingX = x;
+        window.myKingY = y;
+
         cooldownEndTime = 0;
 
         // Post-spawn survival logging: verify piece persists and we stay alive
@@ -354,6 +359,9 @@ ws.addEventListener("message", function (data) {
       legalMoves = undefined;
       draggingSelected = false;
       moveWasDrag = false;
+      // Clear cached position so follow camera stops tracking the dead position
+      window.myKingX = undefined;
+      window.myKingY = undefined;
 
       // PostHog: track death
       if (window.posthog && window.posthog.capture) {
