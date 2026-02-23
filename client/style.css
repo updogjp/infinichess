@@ -1965,3 +1965,269 @@ body.touching * {
     right: 10px;
   }
 }
+
+/* ======================== */
+/* 13-inch laptop / small   */
+/* laptop screens           */
+/* Targets viewports that   */
+/* are narrow OR short,     */
+/* e.g. 1280×800, 1366×768 */
+/* ======================== */
+@media (max-width: 1366px) and (max-height: 820px) {
+
+  /* --- Splash Screen --- */
+  .splash-logo {
+    width: 80px;
+    height: 80px;
+  }
+
+  .splash-title {
+    font-size: 32px;
+    letter-spacing: 8px;
+  }
+
+  .splash-subtitle {
+    font-size: 10px;
+    letter-spacing: 4px;
+    margin-top: 8px;
+  }
+
+  .splash-links {
+    margin-top: 24px;
+    gap: 12px;
+  }
+
+  .splash-link {
+    font-size: 9px;
+    padding: 6px 10px;
+  }
+
+  .splash-loader {
+    width: 160px;
+    margin-top: 24px;
+  }
+
+  .play-button {
+    margin-top: 24px;
+    padding: 10px 28px;
+    font-size: 13px;
+  }
+
+  .splash-steam-btn {
+    margin-top: 16px;
+    padding: 10px 16px;
+    font-size: 10px;
+  }
+
+  /* --- Setup / Deploy modal --- */
+  #playerSetupDiv {
+    padding: 8px;
+    overflow-y: auto;
+    align-items: center;
+    justify-content: flex-start;
+    padding-top: 16px;
+  }
+
+  .setup-panel {
+    min-width: 0;
+    max-width: 420px;
+    width: 92vw;
+    padding: 18px 20px;
+  }
+
+  .setup-header {
+    margin-bottom: 14px;
+  }
+
+  .setup-header h2 {
+    font-size: 20px;
+    letter-spacing: 3px;
+  }
+
+  .form-group {
+    margin-bottom: 12px;
+  }
+
+  .form-group label {
+    font-size: 9px;
+    margin-bottom: 5px;
+  }
+
+  #playerName {
+    font-size: 13px;
+    padding: 8px;
+  }
+
+  .color-swatch {
+    min-height: 28px;
+  }
+
+  .preview-panel {
+    padding: 10px;
+    margin: 12px 0;
+  }
+
+  #previewCanvas {
+    width: 80px;
+    height: 80px;
+  }
+
+  #previewName {
+    font-size: 11px;
+  }
+
+  .evolution-path {
+    font-size: 10px;
+    gap: 3px;
+  }
+
+  .evo-step {
+    padding: 2px 5px;
+    font-size: 10px;
+  }
+
+  .evo-hint {
+    font-size: 9px;
+    margin-top: 4px;
+  }
+
+  .deploy-btn {
+    padding: 12px;
+    font-size: 12px;
+  }
+
+  .spectate-btn {
+    padding: 8px;
+    font-size: 10px;
+    margin-top: 6px;
+  }
+
+  /* --- Leaderboard --- */
+  .leaderboard-div {
+    width: 200px;
+    padding: 12px;
+    font-size: 10px;
+  }
+
+  .lb-row {
+    font-size: 10px;
+    padding: 4px 6px;
+    gap: 6px;
+  }
+
+  .lb-name {
+    font-size: 9px;
+  }
+
+  .online-count {
+    font-size: 9px;
+  }
+
+  .hideLB {
+    right: -200px !important;
+  }
+
+  /* --- Stats panel --- */
+  .stats-panel {
+    min-width: 180px;
+    padding: 10px;
+    font-size: 10px;
+  }
+
+  .stat-row {
+    font-size: 10px;
+  }
+
+  /* --- Chat --- */
+  .chat-div,
+  .chat {
+    width: 260px;
+  }
+
+  .chat-div {
+    max-height: 130px;
+  }
+
+  .hideChat {
+    left: -260px !important;
+  }
+
+  /* --- Minimap --- */
+  .minimap {
+    width: 130px;
+    height: 130px;
+    bottom: 30px;
+    right: 14px;
+  }
+
+  /* --- Kill feed --- */
+  .kill-entry {
+    font-size: 9px;
+    padding: 3px 10px;
+  }
+
+  /* --- Toast --- */
+  .toast {
+    font-size: 10px;
+    padding: 9px 16px;
+    max-width: 360px;
+  }
+}
+
+/* ======================== */
+/* Short-viewport fix       */
+/* Ensures setup modal      */
+/* scrolls on any screen    */
+/* with limited height      */
+/* ======================== */
+@media (max-height: 750px) {
+  #playerSetupDiv {
+    justify-content: flex-start;
+    padding-top: 12px;
+    overflow-y: auto;
+  }
+
+  .setup-panel {
+    max-height: calc(100vh - 24px);
+    overflow-y: auto;
+  }
+
+  .splash-container {
+    gap: 0;
+  }
+
+  .splash-logo {
+    width: 72px;
+    height: 72px;
+    margin-bottom: 16px;
+  }
+
+  .splash-logo-wrap {
+    margin-bottom: 12px;
+  }
+
+  .splash-title {
+    font-size: 30px;
+  }
+
+  .splash-subtitle {
+    margin-top: 6px;
+  }
+
+  .splash-links {
+    margin-top: 18px;
+  }
+
+  .splash-loader {
+    margin-top: 18px;
+  }
+
+  .play-button {
+    margin-top: 18px;
+  }
+
+  .splash-steam-btn {
+    margin-top: 12px;
+    padding: 9px 14px;
+  }
+}
